@@ -14,6 +14,8 @@ Phase 1 (project setup and coding standards) and Phase 2 (application foundation
 - Versioned REST endpoints under `/api/v1`
 - Pydantic Settings for configuration
 - Python standard `logging` behind a project `Logger` singleton facade
+- PyMuPDF for local PDF text, page rendering, and supported table extraction
+- SQLite via Python's standard library for document metadata and extraction results
 - pytest and HTTPX for tests
 - Ruff for linting and formatting
 
@@ -67,6 +69,12 @@ python -m pip install -e ".[dev]"
 python -m uvicorn app.main:app --reload
 ```
 
+The editable install includes the multipart upload parser and PyMuPDF. OCR is
+optional and runs locally: install Tesseract OCR and its language data, then set
+`DOCUMENT_OCR_ENABLED=true` and configure `DOCUMENT_OCR_TESSERACT_PATH` and
+`DOCUMENT_OCR_LANGUAGE` in `backend/.env`. Without OCR, pages needing OCR are
+retained with an explicit warning. No document content is sent to a remote service.
+
 If creating the environment for the first time:
 
 ```powershell
@@ -118,6 +126,7 @@ Only report checks as passing if they were actually run and passed.
 - `docs/plans/`: feature plans
 - `docs/sessions/`: development progress and investigation notes
 - `docs/features/`: implemented feature behavior
+- `docs/features/document-ingestion.md`: PDF upload and extraction behavior
 - `docs/testing/`: testing strategy
 - `docs/ai/`: AI, retrieval, evidence, and evaluation design
 

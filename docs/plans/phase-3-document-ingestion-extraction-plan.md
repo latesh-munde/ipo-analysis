@@ -1,7 +1,7 @@
 # Phase 3 --- Document Ingestion and Extraction
 **Project:** IPO Analysis System\
 **Phase:** 3\
-**Status:** Planned\
+**Status:** In progress\
 **Prerequisite:** Phase 2 is assumed complete.\
 **Audience:** Coding agent and reviewer
 
@@ -343,25 +343,39 @@ At each stage, run the relevant tests before continuing. Keep changes
 focused.
 
 ## 18. Definition of Done
--   [ ] Valid PDFs can be uploaded/registered.
--   [ ] Invalid, unsupported, and oversized files fail safely.
--   [ ] Text is extracted page by page.
+-   [x] Valid PDFs can be uploaded/registered.
+-   [x] Invalid, unsupported, and oversized files fail safely.
+-   [x] Text is extracted page by page.
 -   [ ] OCR is used for scanned pages when configured and needed.
--   [ ] OCR/table failures are visible and do not erase successful text.
--   [ ] Tables retain structure and page references where supported.
--   [ ] Document, page, and table results preserve provenance.
--   [ ] Raw extracted values are not silently modified or fabricated.
--   [ ] Exact duplicate detection follows a tested policy.
--   [ ] Partial-success statuses and warnings are accurate.
--   [ ] Retries do not create duplicate extraction records.
--   [ ] Dependencies, configuration, setup, API behavior, and
+-   [x] OCR/table failures are visible and do not erase successful text.
+-   [x] Tables retain structure and page references where supported.
+-   [x] Document, page, and table results preserve provenance.
+-   [x] Raw extracted values are not silently modified or fabricated.
+-   [x] Exact duplicate detection follows a tested policy.
+-   [x] Partial-success statuses and warnings are accurate.
+-   [x] Retries do not create duplicate extraction records.
+-   [x] Dependencies, configuration, setup, API behavior, and
     limitations are documented.
--   [ ] New tests and existing Phase 2 regression tests pass.
--   [ ] Relevant project documentation is updated.
--   [ ] No credentials, real private documents, or temporary artifacts
+-   [x] New tests and existing Phase 2 regression tests pass.
+-   [x] Relevant project documentation is updated.
+-   [x] No credentials, real private documents, or temporary artifacts
     are committed.
--   [ ] Final report lists verified behavior, test commands/results,
+-   [x] Final report lists verified behavior, test commands/results,
     limitations, and remaining work.
+
+## Current implementation verification — 2026-10-17
+
+- `python -m pytest`: 29 passed; one upstream Starlette/httpx deprecation warning.
+- `python -m pip check`: passed.
+- `python -m ruff check .`: passed.
+- Formatting of changed Python files: passed.
+- Repository-wide `python -m ruff format --check .` still reports the existing
+  formatting difference in `backend/app/core/logging.py`; that unrelated file
+  was not changed.
+- OCR adapter/selection and failure handling are unit-tested with a mocked
+  Tesseract executable. The environment has no installed Tesseract executable,
+  so a live scanned-PDF OCR check remains outstanding. Phase status remains
+  **In progress** until that criterion is verified.
 
 ## 19. Required Completion Report
 The agent must report:

@@ -17,13 +17,22 @@ async def http_exception_handler(
         403: "FORBIDDEN",
         404: "NOT_FOUND",
         405: "METHOD_NOT_ALLOWED",
+        413: "PAYLOAD_TOO_LARGE",
+        415: "UNSUPPORTED_MEDIA_TYPE",
+        422: "VALIDATION_ERROR",
     }
 
-    message = (
-        exc.detail
-        if isinstance(exc.detail, str)
-        else "The request could not be completed."
-    )
+    code = codes.get(exc.status_code, "HTTP_ERROR")
+    message = "The request could not be completed."
+    if isinstance(exc.detail, str):
+        message = exc.detail
+    elif isinstance(exc.detail, dict):
+        detail_code = exc.detail.get("code")
+        detail_message = exc.detail.get("message")
+        if isinstance(detail_code, str):
+            code = detail_code
+        if isinstance(detail_message, str):
+            message = detail_message
 
     return JSONResponse(
         status_code=exc.status_code,
@@ -31,7 +40,7 @@ async def http_exception_handler(
             "success": False,
             "data": None,
             "error": {
-                "code": codes.get(exc.status_code, "HTTP_ERROR"),
+                "code": code,
                 "message": message,
             },
             "meta": {},
