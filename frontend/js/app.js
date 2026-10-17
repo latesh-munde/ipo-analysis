@@ -1,16 +1,10 @@
-const API_BASE_URL = "/api/v1";
+import { apiRequest } from "./api/api-client.js";
 
 async function checkBackendHealth() {
     const statusElement = document.querySelector("#api-status");
 
     try {
-        const response = await fetch(`${API_BASE_URL}/health`);
-
-        if (!response.ok) {
-            throw new Error("Backend request failed");
-        }
-
-        const data = await response.json();
+        const data = await apiRequest("/health");
         statusElement.textContent = `Backend status: ${data.status}`;
     } catch {
         statusElement.textContent = "Unable to connect to backend.";
