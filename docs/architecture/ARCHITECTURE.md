@@ -2,7 +2,9 @@
 
 ## Status and scope
 
-This describes the current application foundation and Phase 3 document-ingestion implementation. It does not claim that RAG, MCP, or AI analysis is implemented unless confirmed in source code.
+This describes the current application foundation, Phase 3 document ingestion,
+and the in-progress Phase 4 source-bound financial-analysis feature. It does not
+claim that RAG, MCP, or AI analysis is implemented unless confirmed in source.
 
 ## Current foundation
 
@@ -39,7 +41,9 @@ Application services
        +--> Document service -> local PDF storage and SQLite repository
        |                     -> PyMuPDF text/table extraction
        |                     -> optional local Tesseract OCR
-       +--> Deterministic financial calculations (future feature)
+       +--> Financial-analysis service -> table-cell evidence resolution
+       |                               -> Decimal normalization/validation
+       |                               -> deterministic metrics/report
        +--> Optional AI interpretation/retrieval (future feature)
        |
        v
@@ -82,10 +86,29 @@ PDF page and supported tables; optional local Tesseract OCR is attempted only fo
 low-text pages. Page and table results retain document IDs and one-based PDF page
 numbers. Detailed API behavior and limitations are documented in
 `../features/document-ingestion.md`.
+The financial-analysis API, formula policies, source contract, and limitations
+are described in `../features/financial-analysis.md`.
+
+### Financial analysis
+
+`POST /api/v1/documents/{document_id}/financial-analysis` accepts explicit
+financial-fact metadata and source table coordinates. The analysis service
+resolves the value, line label, period-header cell, and extraction warnings from
+the existing document-table repository; it does not trust client numeric input.
+Pure calculations live in `app/financial/calculations.py`; the service
+coordinates document lookup and report assembly. Formula results use Decimal
+arithmetic and carry formula versions, fact IDs, and exact source references.
+The web page displays those same backend results and performs no financial
+calculations.
+
+Phase 3 currently stores raw strings rather than structured financial facts.
+Until that upstream contract exists, period, line item, unit, currency, basis,
+audit, and restatement metadata are explicitly mapped by the user. Reports are
+on-demand and not persisted. The one-document scope avoids attributing facts to
+an unverified company; cross-document DRHP/RHP analysis remains outstanding.
 
 ### Future analysis components
 
-- Financial domain: deterministic, independently tested calculations.
 - AI integration: qualitative interpretation and evidence-grounded explanation only where useful.
 
 ## Financial evidence principles

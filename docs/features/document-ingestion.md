@@ -8,6 +8,10 @@
 Accept IPO prospectus and financial-statement PDFs, extract traceable page text
 and supported tables, and preserve warnings rather than guessing missing content.
 This feature does not perform financial analysis or recommendations.
+Financial analysis is a separate, in-progress feature documented in
+[`financial-analysis.md`](./financial-analysis.md). It uses explicit references
+to the stored raw table cells; PDF extraction itself does not identify or
+validate financial facts.
 
 ## User workflow
 

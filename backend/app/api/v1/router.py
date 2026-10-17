@@ -2,8 +2,16 @@ from typing import Annotated
 
 from app.core.config import Settings, get_settings
 from app.schemas.documents import DocumentMetadata
+from app.schemas.financial_analysis import (
+    FinancialAnalysisReport,
+    FinancialAnalysisRequest,
+)
 from app.schemas.response import ApiResponse
 from app.services.documents import DocumentInputError, DocumentService
+from app.services.financial_analysis import (
+    FinancialAnalysisInputError,
+    FinancialAnalysisService,
+)
 from fastapi import (
     APIRouter,
     Depends,
@@ -22,6 +30,16 @@ def get_document_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> DocumentService:
     return DocumentService(settings)
+
+
+def get_financial_analysis_service(
+    document_service: Annotated[DocumentService, Depends(get_document_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FinancialAnalysisService:
+    return FinancialAnalysisService(
+        document_service,
+        settings.financial_reconciliation_tolerance_rupees,
+    )
 
 
 @router.get("/health", response_model=ApiResponse)
@@ -118,6 +136,28 @@ def get_document_tables(
             "total": len(tables),
         },
     )
+
+
+@router.post(
+    "/documents/{document_id}/financial-analysis",
+    response_model=ApiResponse,
+)
+def analyze_document_financials(
+    document_id: str,
+    request: FinancialAnalysisRequest,
+    service: Annotated[
+        FinancialAnalysisService,
+        Depends(get_financial_analysis_service),
+    ],
+) -> ApiResponse:
+    try:
+        report: FinancialAnalysisReport = service.analyze(document_id, request)
+    except FinancialAnalysisInputError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    return ApiResponse(success=True, data=report.model_dump(mode="json"))
 
 
 def _require_document(service: DocumentService, document_id: str) -> DocumentMetadata:

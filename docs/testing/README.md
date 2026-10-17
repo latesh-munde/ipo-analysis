@@ -20,7 +20,8 @@ Current development interpreter: Python 3.13.6.
 
 ## Test layers
 
-- Unit: financial formulas, configuration, logging facade, helpers, and adapters.
+- Unit: financial formulas and normalization, configuration, logging facade,
+  helpers, and adapters.
 - API/integration: routes, response contracts, validation, exception handlers, and frontend delivery.
 - Document fixtures: known files with expected extraction results and source locations.
 - AI evaluation: later, curated examples with explicit evidence-support and factuality criteria.
@@ -44,6 +45,22 @@ Current development interpreter: Python 3.13.6.
 - Document metadata and extraction results persist across service instances.
 - Local browser workflow displays upload status, source-linked page text,
   extracted table results or the empty-table state, and document warnings.
+- Financial-analysis tests resolve numeric values only from stored source-table
+  cells; cover formula values, missing/zero/conflicting inputs, incompatible
+  restatement scopes, reconciliation tolerances, evidence propagation, and
+  sanitized API errors. No financial test requires a PDF or external service.
+
+## Phase 4 targeted checks
+
+Run from `backend/`:
+
+```powershell
+python -m pytest tests/unit/test_financial_analysis.py tests/test_financial_analysis_api.py
+```
+
+The browser workflow for manual source-cell mapping and report rendering should
+also be smoke-tested after UI changes. Review all returned source cells against
+the original filing; OCR results are not verified financial data.
 
 ## Rules
 

@@ -229,7 +229,20 @@ select {
     color: var(--ink);
 }
 
+input[type="date"],
+input[type="text"],
+input[type="number"] {
+    width: 100%;
+    min-height: 42px;
+    padding: 0 0.7rem;
+    border: 1px solid #dce5dd;
+    border-radius: 8px;
+    background: white;
+    color: var(--ink);
+}
+
 select:focus,
+input:focus,
 button:focus-visible,
 a:focus-visible,
 .file-picker:focus-within {
@@ -590,6 +603,205 @@ button {
     line-height: 1.55;
 }
 
+.analysis-builder {
+    margin-top: 2rem;
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--line);
+}
+
+.analysis-builder .section-heading {
+    margin-bottom: 0.8rem;
+}
+
+.analysis-note {
+    max-width: 760px;
+    margin-bottom: 1.25rem;
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+.fact-form {
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fafcfb;
+}
+
+.fact-fields {
+    display: grid;
+    grid-template-columns: minmax(130px, 0.7fr) minmax(0, 1.3fr);
+    align-items: center;
+    gap: 0.65rem 0.8rem;
+}
+
+.fact-fields .field-label {
+    margin: 0;
+}
+
+.date-fields {
+    display: contents;
+}
+
+#as-of-field {
+    display: contents;
+}
+
+#add-fact-button,
+.secondary-button {
+    min-height: 42px;
+    margin-top: 1rem;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: 8px;
+    background: var(--green);
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.secondary-button {
+    margin-top: 0.4rem;
+    background: #eaf3ed;
+    color: var(--green-dark);
+}
+
+.secondary-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.fact-list {
+    margin: 1rem 0;
+}
+
+.fact-list h3,
+.analysis-report h3 {
+    margin: 1.2rem 0 0.55rem;
+    font-size: 0.92rem;
+}
+
+.fact-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid #edf0ed;
+    color: #46564c;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.remove-fact {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.65rem;
+    border: 1px solid #e2e8e3;
+    border-radius: 7px;
+    background: white;
+    color: var(--red);
+    font-size: 0.72rem;
+    cursor: pointer;
+}
+
+.analysis-report {
+    margin-top: 1.4rem;
+}
+
+.report-heading {
+    margin-bottom: 1rem;
+}
+
+.report-heading h3 {
+    margin: 0 0 0.35rem;
+}
+
+.report-heading p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.metric-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.metric-table th,
+.metric-table td {
+    min-width: 110px;
+    padding: 0.65rem;
+    border: 1px solid #e2e8e3;
+    text-align: left;
+    vertical-align: top;
+    white-space: pre-wrap;
+}
+
+.metric-table th {
+    background: #f4f8f4;
+}
+
+.metric-table thead th {
+    white-space: nowrap;
+}
+
+.metric-value {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+}
+
+.metric-status.is-calculated {
+    color: var(--green-dark);
+}
+
+.metric-status.is-unavailable {
+    color: var(--amber);
+}
+
+.metric-status.is-blocked {
+    color: var(--red);
+}
+
+.formula-text {
+    display: block;
+    min-width: 220px;
+    color: #47574d;
+    font-size: 0.72rem;
+    white-space: normal;
+}
+
+.metric-evidence {
+    margin: 0.5rem 0 0;
+    padding-left: 1.1rem;
+    color: var(--muted);
+    font-size: 0.7rem;
+    line-height: 1.5;
+}
+
+.metric-findings {
+    margin: 0.45rem 0 0;
+    color: var(--amber);
+    font-size: 0.68rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.report-notes {
+    margin-top: 1rem;
+    padding: 0.1rem 0.9rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fafcfb;
+    font-size: 0.76rem;
+    line-height: 1.55;
+}
+
+.report-notes ul {
+    padding-left: 1.2rem;
+}
+
 .table-scroll {
     overflow-x: auto;
     padding: 0 0.8rem 0.8rem;
@@ -712,6 +924,15 @@ button {
 
     .document-summary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fact-fields {
+        grid-template-columns: 1fr;
+        gap: 0.45rem;
+    }
+
+    .fact-fields .field-label:not(:first-child) {
+        margin-top: 0.35rem;
     }
 
     .how-it-works {
