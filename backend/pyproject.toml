@@ -1,0 +1,30 @@
+
+[project]
+name = "ipo-analysis-backend"
+version = "0.1.0"
+description = "Backend API for the IPO Analysis System"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
