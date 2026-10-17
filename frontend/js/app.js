@@ -34,6 +34,14 @@ const factList = document.querySelector("#fact-list");
 const analyzeButton = document.querySelector("#analyze-button");
 const analysisStatus = document.querySelector("#analysis-status");
 const analysisReport = document.querySelector("#analysis-report");
+const sourceReview = document.querySelector("#source-review");
+const sourcePageImage = document.querySelector("#source-page-image");
+const sourcePageHighlight = document.querySelector("#source-page-highlight");
+const sourceReviewForm = document.querySelector("#source-review-form");
+const sourceReviewValue = document.querySelector("#source-review-value");
+const sourceReviewCheckbox = document.querySelector("#source-review-confirm-checkbox");
+const sourceReviewSubmit = document.querySelector("#source-review-submit");
+const sourceReviewStatus = document.querySelector("#source-review-status");
 const PAGE_SIZE = 500;
 const POINT_IN_TIME_ITEMS = new Set([
     "current_assets",
@@ -99,6 +107,9 @@ const LINE_ITEM_STATEMENTS = {
 let selectedDocumentId = null;
 let extractedTables = [];
 let selectedFacts = [];
+let reviewedCellKeys = new Set();
+let activeReviewTarget = null;
+let activeReviewButton = null;
 
 fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -147,8 +158,11 @@ form.addEventListener("submit", async (event) => {
             fetchAllResults(`/documents/${encodeURIComponent(document.document_id)}/pages`),
             fetchAllResults(`/documents/${encodeURIComponent(document.document_id)}/tables`),
         ]);
+        const reviews = await apiRequest(
+            `/documents/${encodeURIComponent(document.document_id)}/financial-cell-reviews`,
+        );
 
-        renderResults(document, pages, tables);
+        renderResults(document, pages, tables, reviews);
         const duplicateMessage = document.duplicate
             ? " This exact PDF was already uploaded, so the saved results are shown."
             : "";
@@ -171,6 +185,16 @@ tablesTab.addEventListener("click", () => selectResultTab("tables"));
 lineItemSelect.addEventListener("change", updatePeriodFields);
 factForm.addEventListener("submit", addSelectedFact);
 analyzeButton.addEventListener("click", calculateFinancialAnalysis);
+document.querySelector("#close-source-review").addEventListener("click", () => {
+    sourceReview.hidden = true;
+});
+sourceReviewForm.addEventListener("submit", submitFinancialCellReview);
+sourcePageImage.addEventListener("error", () => {
+    showSourceReviewStatus(
+        "The source page could not be rendered. The OCR cell has not been verified.",
+        "error",
+    );
+});
 
 for (const tab of [pagesTab, tablesTab]) {
     tab.addEventListener("keydown", (event) => {
@@ -218,10 +242,23 @@ async function fetchAllResults(path) {
     return items;
 }
 
-function renderResults(documentInfo, pages, tables) {
+function renderResults(documentInfo, pages, tables, reviews) {
     selectedDocumentId = documentInfo.document_id;
     extractedTables = tables;
     selectedFacts = [];
+    activeReviewTarget = null;
+    activeReviewButton = null;
+    reviewedCellKeys = new Set(
+        reviews.map((review) =>
+            reviewCellKey(
+                review.page_number,
+                review.table_index,
+                review.row_index,
+                review.column_index,
+            ),
+        ),
+    );
+    sourceReview.hidden = true;
     analysisReport.replaceChildren();
     analysisReport.hidden = true;
     clearAnalysisStatus();
@@ -360,7 +397,18 @@ function renderSelectedFacts() {
         const item = createElement("div", "fact-item");
         const periodCell =
             source.rows[fact.period_header_row_index][fact.value_column_index];
-        const summaryText = `${lineItemLabel(fact.line_item_code)} · ${fact.period_label} (“${periodCell}”) · ${row[fact.label_column_index]}: ${row[fact.value_column_index]} · page ${fact.page_number}, table ${fact.table_index}, row ${fact.row_index}`;
+        const requiresReview =
+            source.extraction_method.startsWith("tesseract_ocr") &&
+            !reviewedCellKeys.has(
+                reviewCellKey(
+                    fact.page_number,
+                    fact.table_index,
+                    fact.row_index,
+                    fact.value_column_index,
+                ),
+            );
+        const reviewNote = requiresReview ? " · OCR value needs source review" : "";
+        const summaryText = `${lineItemLabel(fact.line_item_code)} · ${fact.period_label} (“${periodCell}”) · ${row[fact.label_column_index]}: ${row[fact.value_column_index]} · page ${fact.page_number}, table ${fact.table_index}, row ${fact.row_index}${reviewNote}`;
         const remove = createElement("button", "remove-fact", "Remove");
         remove.type = "button";
         remove.addEventListener("click", () => {
@@ -371,7 +419,110 @@ function renderSelectedFacts() {
         factList.append(item);
     });
     analyzeButton.textContent = `Calculate ${selectedFacts.length} mapped fact(s)`;
-    analyzeButton.disabled = false;
+    analyzeButton.disabled = selectedFacts.some((fact) => {
+        const source = extractedTables.find(
+            (table) =>
+                table.page_number === fact.page_number &&
+                table.table_index === fact.table_index,
+        );
+        return (
+            source?.extraction_method.startsWith("tesseract_ocr") &&
+            !reviewedCellKeys.has(
+                reviewCellKey(
+                    fact.page_number,
+                    fact.table_index,
+                    fact.row_index,
+                    fact.value_column_index,
+                ),
+            )
+        );
+    });
+    if (analyzeButton.disabled) {
+        showAnalysisStatus(
+            "Review each selected OCR value against its highlighted PDF cell before calculating.",
+            "error",
+        );
+    }
+}
+
+function reviewCellKey(pageNumber, tableIndex, rowIndex, columnIndex) {
+    return `${pageNumber}:${tableIndex}:${rowIndex}:${columnIndex}`;
+}
+
+function openFinancialCellReview(table, rowIndex, columnIndex, button) {
+    activeReviewTarget = { table, rowIndex, columnIndex };
+    activeReviewButton = button;
+    sourceReview.hidden = false;
+    sourceReviewStatus.textContent = "";
+    sourceReviewStatus.className = "upload-status";
+    sourceReviewCheckbox.checked = false;
+    sourceReviewValue.value = table.rows[rowIndex][columnIndex];
+    sourceReviewSubmit.disabled = false;
+
+    const imagePath =
+        `/documents/${encodeURIComponent(selectedDocumentId)}` +
+        `/pages/${table.page_number}/image`;
+    sourcePageImage.src = `/api/v1${imagePath}`;
+    sourcePageHighlight.hidden = true;
+    const box = table.cell_boxes?.[rowIndex]?.[columnIndex];
+    if (box && table.page_width && table.page_height) {
+        const [x0, y0, x1, y1] = box;
+        sourcePageHighlight.style.left = `${(x0 / table.page_width) * 100}%`;
+        sourcePageHighlight.style.top = `${(y0 / table.page_height) * 100}%`;
+        sourcePageHighlight.style.width = `${((x1 - x0) / table.page_width) * 100}%`;
+        sourcePageHighlight.style.height = `${((y1 - y0) / table.page_height) * 100}%`;
+        sourcePageHighlight.hidden = false;
+    }
+    selectResultTab("tables");
+    sourceReview.scrollIntoView({ behavior: "smooth", block: "start" });
+    sourceReviewValue.focus();
+}
+
+async function submitFinancialCellReview(event) {
+    event.preventDefault();
+    if (!selectedDocumentId || !activeReviewTarget) {
+        showSourceReviewStatus("Choose an OCR cell to review first.", "error");
+        return;
+    }
+    const { table, rowIndex, columnIndex } = activeReviewTarget;
+    sourceReviewSubmit.disabled = true;
+    showSourceReviewStatus("Saving the source verification…");
+    try {
+        await apiRequest(
+            `/documents/${encodeURIComponent(selectedDocumentId)}` +
+                `/pages/${table.page_number}/tables/${table.table_index}` +
+                `/cells/${rowIndex}/${columnIndex}/review`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    confirmed_value: sourceReviewValue.value.trim(),
+                    source_checked: sourceReviewCheckbox.checked,
+                }),
+            },
+        );
+        reviewedCellKeys.add(
+            reviewCellKey(table.page_number, table.table_index, rowIndex, columnIndex),
+        );
+        if (activeReviewButton) {
+            activeReviewButton.textContent = "Reviewed";
+            activeReviewButton.classList.add("is-reviewed");
+        }
+        showSourceReviewStatus(
+            "Review saved. The calculation API will use this confirmed value and retain the original OCR reading.",
+            "success",
+        );
+        renderSelectedFacts();
+    } catch (error) {
+        showSourceReviewStatus(error.message, "error");
+    } finally {
+        sourceReviewSubmit.disabled = false;
+    }
+}
+
+function showSourceReviewStatus(message, state = "") {
+    sourceReviewStatus.textContent = message;
+    sourceReviewStatus.className = `upload-status${state ? ` is-${state}` : ""}`;
 }
 
 async function calculateFinancialAnalysis() {
@@ -392,7 +543,7 @@ async function calculateFinancialAnalysis() {
         );
         renderFinancialReport(report);
         showAnalysisStatus(
-            "Analysis generated. Review unavailable values, findings, and source references.",
+            "Analysis generated and canonical facts saved. Review unavailable values, findings, and source references.",
             "success",
         );
     } catch (error) {
@@ -411,7 +562,7 @@ function renderFinancialReport(report) {
         createElement(
             "p",
             "",
-            `${report.facts.length} cited fact(s) · Formula set ${report.formula_set_version} · Generated ${formatDate(report.generated_at)}`,
+            `${report.facts.length} persisted fact(s) · Formula set ${report.formula_set_version} · Generated ${formatDate(report.generated_at)}`,
         ),
     );
     analysisReport.append(reportHeader);
@@ -490,7 +641,7 @@ function renderFinancialReport(report) {
             createElement(
                 "td",
                 "",
-                `${fact.status} · ${fact.statement_basis} · ${fact.audit_status} · ${fact.restatement_status} · reported in ${fact.reported_unit}`,
+                `${fact.status} · revision ${fact.revision} · ${fact.statement_basis} · ${fact.audit_status} · ${fact.restatement_status} · reported in ${fact.reported_unit}`,
             ),
             createElement(
                 "td",
@@ -616,6 +767,32 @@ function renderPages(pages) {
         content.textContent = page.text || "[No text extracted from this page.]";
         details.append(heading, content);
 
+        if (page.ocr_text !== null && page.ocr_text !== undefined) {
+            const comparison = createElement("details", "page-readings");
+            comparison.append(
+                createElement(
+                    "summary",
+                    "",
+                    "Compare source readings (OCR is unverified)",
+                ),
+            );
+            comparison.append(
+                createElement("h4", "", "Native PDF text"),
+                createElement(
+                    "pre",
+                    "page-text",
+                    page.native_text || "[No native text extracted.]",
+                ),
+                createElement("h4", "", "OCR text — verify every financial number"),
+                createElement(
+                    "pre",
+                    "page-text",
+                    page.ocr_text || "[OCR ran but did not recognize text.]",
+                ),
+            );
+            details.append(comparison);
+        }
+
         if (page.warnings?.length) {
             const notes = createElement("ul", "page-warnings");
             for (const warning of page.warnings) {
@@ -671,9 +848,47 @@ function renderTables(tables) {
         for (const [rowIndex, row] of table.rows.entries()) {
             const tableRow = createElement("tr");
             tableRow.append(createElement("th", "", `Row ${rowIndex}`));
-            for (const cell of row) {
+            for (const [columnIndex, cell] of row.entries()) {
                 const tableCell = createElement("td");
-                tableCell.textContent = cell;
+                tableCell.append(createElement("span", "", cell));
+                if (table.extraction_method.startsWith("tesseract_ocr")) {
+                    const reviewButton = createElement(
+                        "button",
+                        "cell-review-button",
+                        reviewedCellKeys.has(
+                            reviewCellKey(
+                                table.page_number,
+                                table.table_index,
+                                rowIndex,
+                                columnIndex,
+                            ),
+                        )
+                            ? "Reviewed"
+                            : "Review against PDF",
+                    );
+                    reviewButton.type = "button";
+                    if (
+                        reviewedCellKeys.has(
+                            reviewCellKey(
+                                table.page_number,
+                                table.table_index,
+                                rowIndex,
+                                columnIndex,
+                            ),
+                        )
+                    ) {
+                        reviewButton.classList.add("is-reviewed");
+                    }
+                    reviewButton.addEventListener("click", () =>
+                        openFinancialCellReview(
+                            table,
+                            rowIndex,
+                            columnIndex,
+                            reviewButton,
+                        ),
+                    );
+                    tableCell.append(reviewButton);
+                }
                 tableRow.append(tableCell);
             }
             body.append(tableRow);

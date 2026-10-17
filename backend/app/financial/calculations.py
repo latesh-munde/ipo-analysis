@@ -17,7 +17,7 @@ from app.schemas.financial_analysis import (
 )
 
 FORMULA_SET_VERSION = "1.0.0"
-REPORT_SCHEMA_VERSION = "1.0.0"
+REPORT_SCHEMA_VERSION = "1.1.0"
 FORMULA_VERSION = "1.0.0"
 CROSS_STATEMENT_TOLERANCE = Decimal("1")
 DECIMAL_PRECISION = 160
@@ -159,6 +159,7 @@ def _blocking_input_reason(reason: str | None) -> bool:
         "INVALID_NUMERIC_VALUE",
         "NUMERIC_VALUE_TOO_LARGE",
         "NEGATIVE_BASELINE",
+        "OCR_VALUE_UNVERIFIED",
     }
 
 
@@ -222,6 +223,15 @@ def _calculate_analysis(
                 ValidationSeverity.ERROR,
                 "The selected source cell could not be used as a financial value.",
                 [fact.fact_id],
+            )
+        elif fact.status == "unverified":
+            _add_finding(
+                findings,
+                fact.reason_code or "OCR_VALUE_UNVERIFIED",
+                ValidationSeverity.ERROR,
+                "The OCR-derived source cell has not been verified against the PDF.",
+                [fact.fact_id],
+                "Review the exact source-page cell before calculating with this value.",
             )
         elif fact.status == "unavailable":
             _add_finding(
@@ -1264,6 +1274,10 @@ def _reason_message(reason: str) -> str:
         "MISSING_INPUT": "One or more required line items were not supplied.",
         "MISSING_VALUE": (
             "The selected source cell does not contain a reported value."
+        ),
+        "OCR_VALUE_UNVERIFIED": (
+            "The OCR-derived value must be verified against the original PDF page "
+            "before it can be used in a calculation."
         ),
         "NUMERIC_VALUE_TOO_LARGE": (
             "The source cell exceeds the supported 128-digit numeric precision limit."

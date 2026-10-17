@@ -11,6 +11,7 @@ from typing import BinaryIO
 import pymupdf as fitz
 
 from app.core.config import Settings
+from app.financial.evidence import financial_cell_sha256
 from app.schemas.document_responses import DocumentUploadResponse
 from app.schemas.documents import (
     DocumentMetadata,
@@ -18,8 +19,10 @@ from app.schemas.documents import (
     DocumentStatus,
     ExtractedTable,
     ExtractionWarning,
+    FinancialCellReview,
     PageExtraction,
 )
+from app.schemas.financial_analysis import PersistedFinancialFact, ReportedFinancialFact
 from app.services.document_repository import DocumentRepository
 from app.services.pdf_extraction import extract_pdf
 
@@ -93,6 +96,7 @@ class DocumentService:
                         pdf,
                         document_id,
                         self.settings,
+                        document_sha256=sha256,
                     )
                 warnings = initial_warnings + warnings
                 if initial_warnings and status == DocumentStatus.COMPLETED:
@@ -144,6 +148,212 @@ class DocumentService:
 
     def get_tables(self, document_id: str) -> list[ExtractedTable]:
         return self.repository.get_tables(document_id)
+
+    def render_page(self, document_id: str, page_number: int) -> bytes:
+        metadata = self.repository.get_metadata(document_id)
+        if metadata is None:
+            raise DocumentInputError(404, "DOCUMENT_NOT_FOUND", "Document not found.")
+        if metadata.page_count is None or not 1 <= page_number <= metadata.page_count:
+            raise DocumentInputError(
+                404,
+                "PAGE_NOT_FOUND",
+                "The requested PDF page was not found.",
+            )
+
+        stored_path = self.repository.get_source_path(document_id)
+        if stored_path is None:
+            raise DocumentInputError(
+                500,
+                "DOCUMENT_SOURCE_UNAVAILABLE",
+                "The stored source PDF is unavailable.",
+            )
+        try:
+            source_path = stored_path.resolve(strict=True)
+            source_path.relative_to(self.storage_dir)
+        except (OSError, ValueError) as exc:
+            raise DocumentInputError(
+                500,
+                "DOCUMENT_SOURCE_UNAVAILABLE",
+                "The stored source PDF is unavailable.",
+            ) from exc
+
+        try:
+            with fitz.open(filename=str(source_path)) as pdf:
+                page = pdf.load_page(page_number - 1)
+                return page.get_pixmap(dpi=120, alpha=False).tobytes("png")
+        except (fitz.FileDataError, RuntimeError, ValueError) as exc:
+            raise DocumentInputError(
+                500,
+                "PAGE_RENDER_FAILED",
+                "The requested source page could not be rendered.",
+            ) from exc
+
+    def review_financial_cell(
+        self,
+        document_id: str,
+        page_number: int,
+        table_index: int,
+        row_index: int,
+        column_index: int,
+        confirmed_value: str,
+    ) -> FinancialCellReview:
+        metadata = self.repository.get_metadata(document_id)
+        if metadata is None:
+            raise DocumentInputError(404, "DOCUMENT_NOT_FOUND", "Document not found.")
+        table = next(
+            (
+                item
+                for item in self.repository.get_tables(document_id)
+                if item.page_number == page_number and item.table_index == table_index
+            ),
+            None,
+        )
+        if table is None:
+            raise DocumentInputError(
+                404,
+                "SOURCE_TABLE_NOT_FOUND",
+                "The source table was not found.",
+            )
+        if row_index < 0 or column_index < 0:
+            raise DocumentInputError(
+                422,
+                "SOURCE_CELL_NOT_FOUND",
+                "The selected OCR cell was not found.",
+            )
+        if not table.extraction_method.startswith("tesseract_ocr"):
+            raise DocumentInputError(
+                422,
+                "CELL_NOT_OCR_DERIVED",
+                "Only OCR-derived cells can use this review workflow.",
+            )
+        if (
+            row_index >= len(table.rows)
+            or column_index >= len(table.rows[row_index])
+            or row_index >= len(table.cell_boxes or [])
+            or column_index >= len(table.cell_boxes[row_index])
+            or table.cell_boxes[row_index][column_index] is None
+        ):
+            raise DocumentInputError(
+                422,
+                "SOURCE_CELL_NOT_FOUND",
+                "The selected OCR cell or its source region was not found.",
+            )
+
+        review = FinancialCellReview(
+            document_id=document_id,
+            page_number=page_number,
+            table_index=table_index,
+            row_index=row_index,
+            column_index=column_index,
+            source_value=table.rows[row_index][column_index],
+            confirmed_value=confirmed_value,
+            reviewed_at=datetime.now(UTC),
+            source_cell_sha256=financial_cell_sha256(
+                table,
+                row_index,
+                column_index,
+                metadata.sha256,
+            ),
+        )
+        self.repository.save_financial_cell_review(review)
+        return review
+
+    def get_financial_cell_review(
+        self,
+        document_id: str,
+        page_number: int,
+        table_index: int,
+        row_index: int,
+        column_index: int,
+    ) -> FinancialCellReview | None:
+        metadata = self.repository.get_metadata(document_id)
+        if metadata is None:
+            return None
+        review = self.repository.get_financial_cell_review(
+            document_id, page_number, table_index, row_index, column_index
+        )
+        if review is None:
+            return None
+        table = next(
+            (
+                item
+                for item in self.repository.get_tables(document_id)
+                if item.page_number == page_number and item.table_index == table_index
+            ),
+            None,
+        )
+        if (
+            table is None
+            or not table.extraction_method.startswith("tesseract_ocr")
+            or row_index < 0
+            or column_index < 0
+            or row_index >= len(table.rows)
+            or column_index >= len(table.rows[row_index])
+            or table.rows[row_index][column_index] != review.source_value
+            or review.source_cell_sha256
+            != financial_cell_sha256(
+                table,
+                row_index,
+                column_index,
+                metadata.sha256,
+            )
+        ):
+            return None
+        return review
+
+    def get_financial_cell_reviews(
+        self,
+        document_id: str,
+    ) -> list[FinancialCellReview]:
+        metadata = self.repository.get_metadata(document_id)
+        if metadata is None:
+            return []
+        reviews = self.repository.get_financial_cell_reviews(document_id)
+        tables = {
+            (table.page_number, table.table_index): table
+            for table in self.repository.get_tables(document_id)
+        }
+        current_reviews = []
+        for review in reviews:
+            table = tables.get((review.page_number, review.table_index))
+            if (
+                table is not None
+                and table.extraction_method.startswith("tesseract_ocr")
+                and review.row_index < len(table.rows)
+                and review.column_index < len(table.rows[review.row_index])
+                and table.rows[review.row_index][review.column_index]
+                == review.source_value
+                and review.source_cell_sha256
+                == financial_cell_sha256(
+                    table,
+                    review.row_index,
+                    review.column_index,
+                    metadata.sha256,
+                )
+            ):
+                current_reviews.append(review)
+        return current_reviews
+
+    def save_financial_facts(
+        self,
+        facts: list[ReportedFinancialFact],
+    ) -> list[PersistedFinancialFact]:
+        return self.repository.save_financial_facts(facts)
+
+    def get_financial_facts(
+        self,
+        document_id: str,
+        *,
+        include_history: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[PersistedFinancialFact]:
+        return self.repository.get_financial_facts(
+            document_id,
+            include_history=include_history,
+            limit=limit,
+            offset=offset,
+        )
 
     def _validate_metadata(
         self,

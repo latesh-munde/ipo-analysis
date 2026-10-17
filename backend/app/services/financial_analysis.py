@@ -10,12 +10,19 @@ from app.financial.calculations import (
     calculate_analysis,
     normalize_value,
 )
-from app.schemas.documents import DocumentMetadata, DocumentStatus, ExtractedTable
+from app.financial.evidence import financial_cell_sha256, financial_table_sha256
+from app.schemas.documents import (
+    DocumentMetadata,
+    DocumentStatus,
+    ExtractedTable,
+    FinancialCellReview,
+)
 from app.schemas.financial_analysis import (
     EvidenceReference,
     FinancialAnalysisReport,
     FinancialAnalysisRequest,
     FinancialFactInput,
+    PersistedFinancialFact,
     ReportedFinancialFact,
     ValidationFinding,
     ValidationSeverity,
@@ -60,19 +67,56 @@ class FinancialAnalysisService:
                 "DOCUMENT_NOT_READY",
                 "The source document has no usable completed extraction results.",
             )
+        source_cells = [
+            (
+                source.page_number,
+                source.table_index,
+                source.row_index,
+                source.value_column_index,
+            )
+            for source in request.facts
+        ]
+        if len(source_cells) != len(set(source_cells)):
+            raise FinancialAnalysisInputError(
+                422,
+                "DUPLICATE_SOURCE_CELL_MAPPING",
+                "Each source value cell may be mapped to only one financial fact.",
+            )
 
         tables = {
             (table.page_number, table.table_index): table
             for table in self.document_service.get_tables(document_id)
         }
+        table_sha256 = {
+            key: financial_table_sha256(table) for key, table in tables.items()
+        }
+        reviews_by_cell = {
+            (
+                review.page_number,
+                review.table_index,
+                review.row_index,
+                review.column_index,
+            ): review
+            for review in self.document_service.get_financial_cell_reviews(document_id)
+        }
         facts = [
-            self._fact_from_source(document, source, tables) for source in request.facts
+            self._fact_from_source(
+                document,
+                source,
+                tables,
+                table_sha256,
+                reviews_by_cell,
+            )
+            for source in request.facts
         ]
+        persisted_facts: list[PersistedFinancialFact] = (
+            self.document_service.save_financial_facts(facts)
+        )
         metrics, findings, checks = calculate_analysis(
-            facts,
+            persisted_facts,
             self.reconciliation_tolerance,
         )
-        findings.extend(self._source_quality_findings(facts))
+        findings.extend(self._source_quality_findings(persisted_facts))
         attach_validation_findings(metrics, findings)
         return FinancialAnalysisReport(
             report_schema_version=REPORT_SCHEMA_VERSION,
@@ -82,20 +126,24 @@ class FinancialAnalysisService:
             document_name=document.original_filename,
             document_type=document.document_type,
             document_sha256=document.sha256,
-            facts=facts,
+            facts=persisted_facts,
             metrics=metrics,
             validation_findings=findings,
             validation_checks=checks,
             limitations=[
                 "Phase 3 extracts raw table cells only. Line items and periods "
                 "must be mapped explicitly; no automatic statement interpretation "
-                "or OCR verification is performed.",
+                "is performed.",
+                "Heuristic OCR table cells are excluded until explicitly reviewed "
+                "against the source page. The local review action is not tied to an "
+                "authenticated reviewer identity.",
                 "Only INR amounts with rupees, thousand, lakh, or crore scales "
                 "are supported. Currency conversion is not performed.",
                 "Lease liabilities are excluded from borrowings unless they are "
                 "explicitly mapped as borrowings; EBITDA and investment "
                 "recommendations are not calculated.",
-                "The report is generated on demand and is not persisted.",
+                "The report is generated on demand; validated source facts are "
+                "persisted as immutable versions.",
                 "Audit and restatement status are user-declared because Phase 3 "
                 "does not extract those structured attributes.",
             ],
@@ -106,6 +154,8 @@ class FinancialAnalysisService:
         document: DocumentMetadata,
         source: FinancialFactInput,
         tables: dict[tuple[int, int], ExtractedTable],
+        table_sha256: dict[tuple[int, int], str],
+        reviews_by_cell: dict[tuple[int, int, int, int], FinancialCellReview],
     ) -> ReportedFinancialFact:
         table = tables.get((source.page_number, source.table_index))
         if table is None:
@@ -147,9 +197,51 @@ class FinancialAnalysisService:
 
         original_label = row[source.label_column_index]
         extracted_value = row[source.value_column_index]
+        ocr_derived = table.extraction_method.startswith("tesseract_ocr")
+        review = (
+            reviews_by_cell.get(
+                (
+                    table.page_number,
+                    table.table_index,
+                    source.row_index,
+                    source.value_column_index,
+                )
+            )
+            if ocr_derived
+            else None
+        )
+        if review is not None and review.source_value != extracted_value:
+            review = None
+        if review is not None and review.source_cell_sha256 != financial_cell_sha256(
+            table,
+            source.row_index,
+            source.value_column_index,
+            document.sha256,
+        ):
+            review = None
+        confirmed_value = review.confirmed_value if review else None
+        review_status = (
+            "verified" if review else "unverified" if ocr_derived else "not_required"
+        )
+        value_for_calculation = confirmed_value if review else extracted_value
+        cell_box = None
+        if (
+            table.cell_boxes is not None
+            and source.row_index < len(table.cell_boxes)
+            and source.value_column_index < len(table.cell_boxes[source.row_index])
+        ):
+            cell_box = table.cell_boxes[source.row_index][source.value_column_index]
         fact_id = _fact_id(document.document_id, source)
         evidence = EvidenceReference(
             document_id=document.document_id,
+            source_document_sha256=document.sha256,
+            source_table_sha256=table_sha256[(table.page_number, table.table_index)],
+            source_cell_sha256=financial_cell_sha256(
+                table,
+                source.row_index,
+                source.value_column_index,
+                document.sha256,
+            ),
             page_number=table.page_number,
             table_index=table.table_index,
             row_index=source.row_index,
@@ -159,13 +251,24 @@ class FinancialAnalysisService:
             value_column_index=source.value_column_index,
             original_label=original_label,
             extracted_value=extracted_value,
+            confirmed_value=confirmed_value,
+            review_status=review_status,
+            reviewed_at=review.reviewed_at if review else None,
+            cell_box=cell_box,
             extraction_method=table.extraction_method,
             source_warnings=[
                 f"{warning.code}: {warning.message}" for warning in table.warnings
             ],
         )
-        reported_value, reason_code = _parse_amount(extracted_value)
-        status = "reported" if reported_value is not None else "unavailable"
+        if ocr_derived and review is None:
+            reported_value, reason_code, status = (
+                None,
+                "OCR_VALUE_UNVERIFIED",
+                "unverified",
+            )
+        else:
+            reported_value, reason_code = _parse_amount(value_for_calculation)
+            status = "reported" if reported_value is not None else "unavailable"
         if reason_code in {"INVALID_NUMERIC_VALUE", "NUMERIC_VALUE_TOO_LARGE"}:
             status = "rejected"
         normalized_value = (
@@ -200,12 +303,17 @@ class FinancialAnalysisService:
     ) -> list[ValidationFinding]:
         findings: dict[str, ValidationFinding] = {}
         for fact in facts:
-            if fact.evidence.extraction_method == "tesseract_ocr":
+            if fact.evidence.extraction_method.startswith("tesseract_ocr"):
                 _source_finding(
                     findings,
                     "OCR_SOURCE_REQUIRES_VERIFICATION",
-                    "This financial value came from OCR and must be checked against "
-                    "the original document.",
+                    (
+                        "The OCR value was confirmed, but heuristic table layout "
+                        "and row/period mapping still require source-page review."
+                        if fact.evidence.review_status == "verified"
+                        else "This financial value came from OCR and must be checked "
+                        "against the original document."
+                    ),
                     fact.fact_id,
                 )
             if fact.evidence.source_warnings:
@@ -273,20 +381,7 @@ def _fact_id(document_id: str, source: FinancialFactInput) -> str:
             str(source.page_number),
             str(source.table_index),
             str(source.row_index),
-            str(source.period_header_row_index),
-            str(source.label_column_index),
             str(source.value_column_index),
-            source.line_item_code.value,
-            source.period_label,
-            source.period_kind.value,
-            source.period_start.isoformat() if source.period_start else "",
-            source.period_end.isoformat() if source.period_end else "",
-            source.as_of_date.isoformat() if source.as_of_date else "",
-            source.statement_basis.value,
-            source.audit_status.value,
-            source.restatement_status.value,
-            source.currency,
-            source.unit.value,
         )
     )
     return hashlib.sha256(source_key.encode()).hexdigest()[:24]

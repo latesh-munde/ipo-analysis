@@ -6,9 +6,14 @@ from types import SimpleNamespace
 import pymupdf as fitz
 import pytest
 from app.core.config import Settings
-from app.schemas.documents import DocumentMetadata, DocumentStatus
+from app.schemas.documents import (
+    DocumentMetadata,
+    DocumentStatus,
+    PageExtraction,
+)
 from app.services.document_repository import DocumentRepository
 from app.services.documents import DocumentInputError, DocumentService
+from app.services.pdf_ocr import OcrPageResult, OcrWord
 
 
 def make_pdf(
@@ -21,6 +26,23 @@ def make_pdf(
     content = pdf.tobytes()
     pdf.close()
     return content
+
+
+def test_legacy_page_result_defaults_new_ocr_reading_fields_to_none() -> None:
+    page = PageExtraction.model_validate(
+        {
+            "document_id": "legacy-document",
+            "page_number": 1,
+            "text": "Previously persisted text",
+            "extraction_method": "native_pdf",
+            "status": "completed",
+            "character_count": 25,
+            "warnings": [],
+        }
+    )
+
+    assert page.native_text is None
+    assert page.ocr_text is None
 
 
 def upload(
@@ -51,6 +73,8 @@ def test_upload_extracts_page_text_and_persists_provenance(tmp_path) -> None:
     assert stored.pages[0].page_number == 1
     assert "IPO document" in stored.pages[0].text
     assert stored.pages[0].extraction_method == "native_pdf"
+    assert stored.pages[0].native_text == stored.pages[0].text
+    assert stored.pages[0].ocr_text is None
 
 
 def test_identical_upload_returns_existing_document_without_reprocessing(
@@ -178,9 +202,13 @@ def test_scanned_page_uses_ocr_only_when_configured(tmp_path, monkeypatch) -> No
 
     def fake_ocr(*args, **kwargs):
         calls.append(True)
-        return "Recognized prospectus text with sufficient detail.", 0.91
+        return OcrPageResult(
+            "Recognized prospectus text with sufficient detail.",
+            0.91,
+            [],
+        )
 
-    monkeypatch.setattr(pdf_extraction, "recognize_page", fake_ocr)
+    monkeypatch.setattr(pdf_extraction, "recognize_page_with_layout", fake_ocr)
     settings = Settings(
         document_storage_dir=tmp_path,
         document_ocr_enabled=True,
@@ -198,6 +226,46 @@ def test_scanned_page_uses_ocr_only_when_configured(tmp_path, monkeypatch) -> No
     assert calls
     assert extracted[0].extraction_method == "tesseract_ocr"
     assert extracted[0].ocr_confidence == pytest.approx(0.91)
+    assert extracted[0].native_text.strip() == "scan"
+    assert extracted[0].ocr_text == "Recognized prospectus text with sufficient detail."
+    assert extracted[0].text == extracted[0].ocr_text
+    assert any(
+        warning.code == "OCR_TEXT_REQUIRES_REVIEW" for warning in extracted[0].warnings
+    )
+
+
+def test_shorter_ocr_is_preserved_without_replacing_native_text(tmp_path, monkeypatch):
+    from app.services import pdf_extraction
+
+    monkeypatch.setattr(
+        pdf_extraction,
+        "recognize_page_with_layout",
+        lambda *args, **kwargs: OcrPageResult("OCR 1,280.50", 0.99, []),
+    )
+    settings = Settings(
+        document_storage_dir=tmp_path,
+        document_ocr_enabled=True,
+        document_low_text_char_threshold=100,
+    )
+    pdf = fitz.open()
+    page = pdf.new_page()
+    native = "Native selectable financial statement text for source review."
+    page.insert_text((72, 72), native)
+    page.draw_line((70, 60), (150, 60))
+    content = pdf.tobytes()
+    pdf.close()
+
+    service = DocumentService(settings)
+    result = upload(service, content)
+    extracted = service.get_pages(result.document.document_id)[0]
+
+    assert extracted.extraction_method == "native_pdf"
+    assert native in extracted.native_text
+    assert extracted.ocr_text == "OCR 1,280.50"
+    assert extracted.text == extracted.native_text
+    assert any(
+        warning.code == "OCR_TEXT_REQUIRES_REVIEW" for warning in extracted.warnings
+    )
 
 
 def test_pages_are_retained_when_another_page_fails() -> None:
@@ -269,6 +337,265 @@ def test_table_cell_values_are_not_normalized() -> None:
     assert tables[0].page_number == 1
 
 
+def test_scanned_financial_table_is_persisted_with_cell_boxes_and_review(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services import pdf_extraction
+
+    words = []
+    for line_number, (label, amount) in enumerate(
+        [("FY 2024", "1,000"), ("Revenue", "(1,200.50)"), ("Revenue", "-")],
+        start=1,
+    ):
+        label_x = 100
+        for token in label.split():
+            width = len(token) * 8
+            words.append(
+                OcrWord(
+                    text=token,
+                    confidence=45.0 if line_number == 3 else 90.0,
+                    x0=label_x,
+                    y0=line_number * 30,
+                    x1=label_x + width,
+                    y1=line_number * 30 + 12,
+                    line_id=(1, 1, line_number),
+                )
+            )
+            label_x += width + 4
+        words.append(
+            OcrWord(
+                text=amount,
+                confidence=45.0 if line_number == 3 else 90.0,
+                x0=230,
+                y0=line_number * 30,
+                x1=230 + max(10, len(amount) * 8),
+                y1=line_number * 30 + 12,
+                line_id=(1, 1, line_number),
+            )
+        )
+
+    monkeypatch.setattr(
+        pdf_extraction,
+        "recognize_page_with_layout",
+        lambda *args, **kwargs: OcrPageResult(
+            "FY 2024 1,000 Revenue (1,200.50) Revenue -",
+            0.9,
+            words,
+        ),
+    )
+    settings = Settings(
+        document_storage_dir=tmp_path,
+        document_ocr_enabled=True,
+    )
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "scan")
+    page.draw_rect((70, 60, 150, 90))
+    content = pdf.tobytes()
+    pdf.close()
+
+    service = DocumentService(settings)
+    document_id = upload(service, content).document.document_id
+    table = service.get_tables(document_id)[0]
+
+    assert table.extraction_method == "tesseract_ocr_layout"
+    assert table.source_document_sha256 == service.get_metadata(document_id).sha256
+    assert table.rows == [
+        ["FY 2024", "1,000"],
+        ["Revenue", "(1,200.50)"],
+        ["Revenue", "-"],
+    ]
+    assert table.cell_tokens[1][1] == ["(1,200.50)"]
+    assert table.cell_token_confidences[2][1] == [45.0]
+    assert any(
+        warning.code == "OCR_LOW_CONFIDENCE_TOKENS" for warning in table.warnings
+    )
+    assert table.cell_boxes[1][1] == pytest.approx([82.8, 21.6, 111.6, 25.92])
+    assert table.ocr_engine == "tesseract"
+    assert table.ocr_render_dpi == settings.document_ocr_dpi
+
+    review = service.review_financial_cell(
+        document_id, 1, table.table_index, 1, 1, "-1,200.50"
+    )
+    reopened = DocumentService(settings).get_financial_cell_review(
+        document_id, 1, table.table_index, 1, 1
+    )
+
+    assert review.source_value == "(1,200.50)"
+    assert review.confirmed_value == "-1,200.50"
+    assert reopened == review
+    assert service.get_tables(document_id)[0].rows[1][1] == "(1,200.50)"
+
+
+def test_ocr_layout_merges_wrapped_label_and_tracks_multiple_value_cells() -> None:
+    from app.services.pdf_extraction import (
+        _looks_like_financial_cell,
+        _ocr_layout_rows,
+    )
+
+    words = []
+
+    def add_line(line_number: int, y: float, cells: list[tuple[float, list[str]]]):
+        for start_x, tokens in cells:
+            x = start_x
+            for token in tokens:
+                width = len(token) * 8
+                words.append(
+                    OcrWord(
+                        text=token,
+                        confidence=92.0,
+                        x0=x,
+                        y0=y,
+                        x1=x + width,
+                        y1=y + 10,
+                        line_id=(1, 1, line_number),
+                    )
+                )
+                x += width + 4
+
+    add_line(1, 10, [(100, ["Particulars"]), (230, ["FY2024"]), (350, ["FY2025"])])
+    add_line(2, 40, [(100, ["Revenue", "from"])])
+    add_line(3, 55, [(100, ["operations"]), (230, ["1,000"]), (350, ["(1,250.50)"])])
+    add_line(4, 85, [(100, ["Margin"]), (230, ["—"]), (350, ["12.5%"])])
+
+    rows, boxes, cell_tokens, cell_confidences = _ocr_layout_rows(words, scale=0.5)
+
+    assert _ocr_layout_rows(words, scale=0.5) == (
+        rows,
+        boxes,
+        cell_tokens,
+        cell_confidences,
+    )
+    assert rows == [
+        ["Particulars", "FY2024", "FY2025"],
+        ["Revenue from operations", "1,000", "(1,250.50)"],
+        ["Margin", "—", "12.5%"],
+    ]
+    assert cell_tokens[1][0] == ["Revenue", "from", "operations"]
+    assert cell_confidences[1][0] == [92.0, 92.0, 92.0]
+    assert boxes[1][0] == pytest.approx([50, 20, 96, 32.5])
+
+    assert _looks_like_financial_cell("Rs. 1,000")
+    assert _looks_like_financial_cell("₹ 1,000")
+    assert _looks_like_financial_cell("(1,250.50)")
+    assert _looks_like_financial_cell("12.5%")
+    assert _looks_like_financial_cell("—")
+    assert not _looks_like_financial_cell("revenue 1,000")
+
+
+def test_ocr_layout_rejects_isolated_split_line_as_a_table() -> None:
+    from app.services.pdf_extraction import _ocr_layout_rows
+
+    words = [
+        OcrWord("Revenue", 90, 100, 20, 150, 30, (1, 1, 1)),
+        OcrWord("1,000", 90, 250, 20, 290, 30, (1, 1, 1)),
+    ]
+
+    assert _ocr_layout_rows(words, scale=0.5) == ([], [], [], [])
+
+
+def test_ocr_layout_preserves_missing_cells_and_warns_on_irregular_rows() -> None:
+    from app.services.pdf_extraction import (
+        _irregular_row_warnings,
+        _ocr_layout_rows,
+    )
+
+    words = []
+    for line_number, cells in enumerate(
+        [
+            [(100, "Particulars"), (230, "FY2024"), (350, "FY2025")],
+            [(100, "Revenue"), (230, "1,000"), (350, "1,200")],
+            [(100, "Expenses"), (350, "800")],
+            [(100, "Profit"), (230, "200"), (350, "400")],
+        ],
+        start=1,
+    ):
+        for x, token in cells:
+            words.append(
+                OcrWord(
+                    text=token,
+                    confidence=90,
+                    x0=x,
+                    y0=line_number * 30,
+                    x1=x + max(10, len(token) * 8),
+                    y1=line_number * 30 + 12,
+                    line_id=(1, 1, line_number),
+                )
+            )
+
+    rows, _, _, _ = _ocr_layout_rows(words, scale=0.5)
+
+    assert [len(row) for row in rows] == [3, 3, 2, 3]
+    warnings = _irregular_row_warnings(rows, page_number=1)
+    assert len(warnings) == 1
+    assert warnings[0].code == "OCR_LAYOUT_IRREGULAR_ROWS"
+
+
+def test_ocr_layout_warns_for_low_and_unavailable_token_confidence() -> None:
+    from app.services.pdf_extraction import _low_confidence_warnings
+
+    warnings = _low_confidence_warnings(
+        [[[None, 59.9, 60.0]]],
+        page_number=3,
+    )
+
+    assert len(warnings) == 1
+    assert warnings[0].code == "OCR_LOW_CONFIDENCE_TOKENS"
+    assert "2 OCR token(s)" in warnings[0].message
+
+
+def test_ocr_layout_aligns_numeric_columns_without_shifting_missing_cells() -> None:
+    from app.services.pdf_extraction import _align_numeric_columns
+
+    rows = [
+        ["Revenue", "26", "391,729", "350,323", "1,468,853", "1,282,184", "1,095,581"],
+        ["Total Income", "401,979", "356,864", "1,497,591", "1,293,330", "1,101,754"],
+        ["Expenses", "28", "88,733", "85,167", "344,924", "333,546", "303,377"],
+        ["Other Income", "27", "10,250", "6,541", "28,738", "11,146", "6,173"],
+    ]
+    column_right_edges = [237.0, 311.0, 376.0, 425.0, 473.0, 521.0]
+    boxes = []
+    tokens = []
+    confidences = []
+    for row_index, row in enumerate(rows):
+        row_boxes = [[50.0, row_index * 12.0, 100.0, row_index * 12.0 + 8.0]]
+        row_tokens = [[row[0]]]
+        row_confidences = [[95.0]]
+        value_edges = column_right_edges[1:] if row_index == 1 else column_right_edges
+        for column_index, value in enumerate(row[1:]):
+            right_edge = value_edges[column_index]
+            row_boxes.append(
+                [
+                    right_edge - len(value) * 3.0,
+                    row_index * 12.0,
+                    right_edge,
+                    row_index * 12.0 + 8.0,
+                ]
+            )
+            row_tokens.append([value])
+            row_confidences.append([95.0])
+        boxes.append(row_boxes)
+        tokens.append(row_tokens)
+        confidences.append(row_confidences)
+
+    aligned = _align_numeric_columns(rows, boxes, tokens, confidences)
+
+    assert [len(row) for row in aligned[0]] == [7, 7, 7, 7]
+    assert aligned[0][1] == [
+        "Total Income",
+        "",
+        "401,979",
+        "356,864",
+        "1,497,591",
+        "1,293,330",
+        "1,101,754",
+    ]
+    assert aligned[1][1][1] is None
+    assert aligned[2][1][2] == ["401,979"]
+    assert aligned[3][1][2] == [95.0]
+
+
 def test_ocr_unavailable_is_reported_without_erasing_native_text(monkeypatch) -> None:
     from app.services import pdf_extraction
     from app.services.pdf_ocr import OcrUnavailableError
@@ -276,7 +603,7 @@ def test_ocr_unavailable_is_reported_without_erasing_native_text(monkeypatch) ->
     def unavailable(*args, **kwargs):
         raise OcrUnavailableError("tesseract missing")
 
-    monkeypatch.setattr(pdf_extraction, "recognize_page", unavailable)
+    monkeypatch.setattr(pdf_extraction, "recognize_page_with_layout", unavailable)
     pdf = fitz.open()
     page = pdf.new_page()
     page.insert_text((72, 72), "tiny")

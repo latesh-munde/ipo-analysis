@@ -583,6 +583,26 @@ button {
     white-space: pre-wrap;
 }
 
+.page-readings {
+    margin: 0.65rem 0;
+    border-top: 1px solid #edf0ed;
+}
+
+.page-readings > summary {
+    padding: 0.75rem 0.9rem;
+    color: var(--green-dark);
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.page-readings h4 {
+    margin: 0.6rem 0 0;
+    padding: 0 0.9rem;
+    color: #53645a;
+    font-size: 0.72rem;
+}
+
 .page-warnings {
     margin: 0;
     padding: 0.8rem 0.9rem 0.8rem 2rem;
@@ -826,6 +846,97 @@ button {
 .extracted-table th {
     background: #f4f8f4;
     font-weight: 700;
+}
+
+.cell-review-button {
+    display: block;
+    margin-top: 0.45rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #d4e2d7;
+    border-radius: 6px;
+    background: #f6faf7;
+    color: var(--green-dark);
+    font-size: 0.68rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cell-review-button.is-reviewed {
+    border-color: #bed9c5;
+    background: #edf7ef;
+}
+
+.source-review {
+    margin-top: 1.2rem;
+    padding: 1.1rem;
+    border: 1px solid #dbe7dd;
+    border-radius: 12px;
+    background: #fbfdfb;
+}
+
+.source-review .section-heading {
+    margin-bottom: 0.25rem;
+}
+
+.source-page-frame {
+    overflow: auto;
+    max-height: 72vh;
+    padding: 0.8rem;
+    border: 1px solid #dfe5df;
+    border-radius: 8px;
+    background: #eef1ee;
+}
+
+.source-page-container {
+    position: relative;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    line-height: 0;
+}
+
+.source-page-container img {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    height: auto;
+}
+
+.source-page-highlight {
+    position: absolute;
+    border: 3px solid #d34b2f;
+    background: rgb(255 205 72 / 22%);
+    box-shadow: 0 0 0 100vmax rgb(20 30 24 / 12%);
+    pointer-events: none;
+}
+
+.source-review-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+    max-width: 650px;
+    margin-top: 1rem;
+}
+
+.source-review-form input[type="text"] {
+    min-height: 42px;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid #cbd8cd;
+    border-radius: 7px;
+    font: inherit;
+}
+
+.review-confirmation {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    color: #405148;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.review-confirmation input {
+    margin-top: 0.1rem;
 }
 
 .how-it-works {

@@ -72,7 +72,7 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload --host 127.0.0.1
 ```
 
 If PowerShell reports that script execution is disabled, activate the
@@ -97,11 +97,14 @@ Keep the terminal running while using the site. On startup, the API is at
    Open **Tables** to review supported table rows and their source pages.
 7. Compare extracted content with the original PDF, particularly OCR results
    and financial figures. OCR is not guaranteed to be accurate.
-8. In **Financial analysis**, map relevant values to their exact extracted
-   table cells, explicitly set the period and reporting metadata, then calculate
-   metrics. Review findings and verify OCR/table values against the filing.
+8. For OCR-derived table cells, choose **Review against PDF**, compare the
+   highlighted source cell, correct the transcription if necessary, and confirm
+   that you checked it. The server excludes unreviewed OCR numbers from
+   calculations. Then map relevant cells, explicitly set period and reporting
+   metadata, and calculate metrics. Review findings and verify table mappings
+   against the filing.
    Analysis reports are shown in the web application and are not persisted or
-   exported.
+   exported. Validated source facts are saved locally as versioned records.
 
 The default upload limit is 50 MiB and the page limit is 2,000 pages. The server
 validates the file and reports invalid, encrypted, oversized, or unreadable PDF
@@ -136,8 +139,9 @@ deploying this application.
 By default, original PDFs and the SQLite document/index data are stored under
 `backend/data/documents/`. The folder is excluded from Git and is not served
 through the website. Protect this folder and its backups; this initial local
-feature does not encrypt files or implement user authentication. Do not use the
-development server to expose private uploaded documents to an untrusted network.
+feature does not encrypt files or implement user authentication. Keep the
+server bound to `127.0.0.1`; do not expose it to a network or use it as a
+shared application.
 
 To select another local folder, set `DOCUMENT_STORAGE_DIR` in `backend/.env`.
 Other supported limits and OCR settings are listed in
@@ -154,7 +158,7 @@ environment using that interpreter. Once the `.venv` exists, the quick start is:
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload --host 127.0.0.1
 ```
 
 ## Quality checks
@@ -186,11 +190,14 @@ Only report checks as passing if they were actually run and passed.
 - `docs/architecture/ARCHITECTURE.md`: current system architecture
 - `docs/decisions/`: durable architecture decisions (ADRs)
 - `docs/plans/`: feature plans
+- `docs/plans/plan-001-financial-evidence-pipeline-hardening.md`: staged work
+  for OCR layout reliability, review identity, canonical financial facts,
+  issuer/document association, and cross-document analysis
 - `docs/sessions/`: development progress and investigation notes
 - `docs/features/`: implemented feature behavior
 - `docs/features/document-ingestion.md`: PDF upload and extraction behavior
 - `docs/features/financial-analysis.md`: source-bound financial calculations,
-  formulas, API, and known Phase 3 integration gap
+  formulas, persisted fact revisions, API, and remaining Phase 3 gaps
 - `docs/testing/`: testing strategy
 - `docs/ai/`: AI, retrieval, evidence, and evaluation design
 

@@ -142,6 +142,42 @@
                 hidden
             ></div>
 
+            <section id="source-review" class="source-review" aria-labelledby="source-review-title" hidden>
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">SOURCE VERIFICATION</p>
+                        <h3 id="source-review-title">Review OCR cell</h3>
+                    </div>
+                    <button id="close-source-review" class="remove-fact" type="button">
+                        Close
+                    </button>
+                </div>
+                <p class="analysis-note">
+                    Compare the highlighted region with the PDF. Correct the transcription if needed,
+                    then explicitly confirm it. This local review is not attributed to an authenticated user.
+                </p>
+                <div class="source-page-frame">
+                    <div id="source-page-container" class="source-page-container">
+                        <img id="source-page-image" alt="Original PDF page with the selected OCR cell highlighted">
+                        <div id="source-page-highlight" class="source-page-highlight" aria-hidden="true"></div>
+                    </div>
+                </div>
+                <form id="source-review-form" class="source-review-form">
+                    <label class="field-label" for="source-review-value">
+                        Confirmed value as printed in the PDF
+                    </label>
+                    <input id="source-review-value" type="text" maxlength="256" required>
+                    <label class="review-confirmation">
+                        <input id="source-review-confirm-checkbox" type="checkbox" required>
+                        I checked this exact cell against the original PDF page.
+                    </label>
+                    <button id="source-review-submit" class="secondary-button" type="submit">
+                        Confirm source value
+                    </button>
+                    <p id="source-review-status" class="upload-status" role="status" aria-live="polite"></p>
+                </form>
+            </section>
+
             <section class="analysis-builder" aria-labelledby="analysis-title">
                 <div class="section-heading">
                     <div>

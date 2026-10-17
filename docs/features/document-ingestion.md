@@ -73,7 +73,15 @@ existing document and `document.duplicate: true`.
   ordered page results, including raw text, extraction method, page status,
   character count, and page warnings.
 - `GET /api/v1/documents/{document_id}/tables?offset=0&limit=100` returns
-  extracted rows, the extraction method, and document/page/table references.
+  extracted rows, cell/page bounds when available, the extraction method, and
+  document/page/table references.
+- `GET /api/v1/documents/{document_id}/pages/{page_number}/image` renders the
+  stored PDF page as a PNG for source verification.
+- `GET /api/v1/documents/{document_id}/financial-cell-reviews` returns current
+  persisted OCR-cell review records.
+- `POST /api/v1/documents/{document_id}/pages/{page_number}/tables/{table_index}/cells/{row_index}/{column_index}/review`
+  accepts `confirmed_value` and `source_checked: true` after the user compares
+  the highlighted source region.
 - Pagination `limit` is from 1 to 500. Missing document IDs return the standard
   404 envelope.
 
@@ -105,10 +113,38 @@ Other validation codes include `FILENAME_REQUIRED`, `UNSUPPORTED_FILE_TYPE`,
   local storage directory. Stored PDFs are not served as static assets.
 - Every expected PDF page receives a one-based result, including blank or
   unreadable pages.
-- Native page text is kept as extracted. OCR replaces it only when OCR returns
-  more non-whitespace characters. OCR output records its method and confidence
-  where Tesseract reports one; confidence below 0.5 adds a verification warning.
-  OCR output is not verified financial data.
+- Page results retain the selected `text` for compatibility and separately
+  preserve `native_text` and `ocr_text`. `ocr_text: null` means OCR was not run;
+  an empty string means OCR ran but recognized no text. The UI exposes both
+  readings when OCR ran.
+- The selected `text` still prefers OCR only when it returns more
+  non-whitespace characters; that length heuristic does not establish
+  correctness. Tesseract confidence is recorded where available, and every
+  non-empty OCR result warns that financial figures must be checked against
+  the original PDF. OCR output is not verified financial data.
+- Tesseract TSV word positions are grouped into heuristic OCR row/cell
+  candidates. Candidate tables retain each cell's PDF-page bounding box,
+  contributing raw OCR word strings and their confidence scores, page
+  dimensions, source document SHA-256, detected engine version, language,
+  render DPI, and explicit warnings. Tokens with confidence below 60/100 or
+  unavailable confidence are flagged; confidence is not a correctness score.
+  When repeated numeric-cell right edges establish at least three stable
+  columns across three or more rows, numeric cells are aligned to those source
+  positions; absent cells are represented by empty strings, never zero. Rows
+  that cannot be aligned remain as extracted and receive an irregular-layout
+  warning. A nearby, x-aligned wrapped label fragment may be joined to a
+  following numeric row when its geometry meets a narrow rule; its box spans
+  both lines. This is not semantic table detection: multi-line labels,
+  headers, merged cells, region boundaries, and unrelated text can still be
+  misgrouped.
+- Review records persist the original OCR cell string, the confirmed
+  transcription, source coordinates, cell hash, and timestamp without changing
+  the extracted table. The review is stale if the source document, table,
+  cell value, or cell bounds change. Legacy reviews without a cell hash require
+  re-review. The UI shows the exact page and highlights the cell region.
+  The analysis service only parses the confirmed transcription for OCR-derived
+  values; an unreviewed value is reported as `unverified` and dependent metrics
+  are `blocked`. The API enforces this even if the browser is bypassed.
 - A document with no usable extracted text or tables is `failed`. Partial
   extraction or warnings produce `completed_with_warnings`; clean results are
   `completed`.
@@ -154,13 +190,30 @@ page-level warnings.
 - Line-based table detection depends on visible table rules and PyMuPDF support.
   Borderless, complex merged, rotated, multi-page, or scanned tables may not
   retain their intended structure.
-- OCR is heuristic, may flatten layout, and can misread financial values;
-  extracted OCR values must be checked against the source.
+- OCR and OCR-to-table reconstruction are heuristic, may flatten or misgroup
+  layout, and can misread financial values. A review action only confirms the
+  selected cell's transcription; users must also check the line-item and period
+  mapping.
+- A local spot check against the supplied RHP found financial-number
+  discrepancies in OCR output even when reported word confidence was above
+  0.9. Confidence must not be used as a substitute for checking the source
+  page. A loose geometry rule also treated four prose fragments on a
+  digitally encoded page as table rows; the current stricter candidate gate
+  rejects that observed false positive, but scanned financial-table precision
+  and recall remain unmeasured. Local review is not associated with an
+  authenticated reviewer identity; this initial application has no
+  authentication/authorization.
+- Forced 200-DPI OCR of digitally encoded statement pages 329, 330, and 334
+  was compared spatially with the PDF text layer in manually inspected table
+  regions: 615 of 618 OCR numeric tokens matched exactly; 10 of 628 native
+  numeric tokens were not recovered. The sample includes a punctuation error
+  that changes numeric scale. These are not scanned-table qualification pages.
 - Native PDF parsing has upload/page-count bounds but no separate wall-clock
   timeout. OCR has a per-page subprocess timeout.
 - The Phase 2 application has no authentication or authorization layer.
-  Deployments handling private prospectuses must restrict network access until
-  access controls are implemented.
+  This is a trusted local single-user tool only: launch it bound to
+  `127.0.0.1` and do not expose it as a shared or network-accessible app.
+  Review timestamps are not verified reviewer attribution.
 - Local storage is not encrypted by this feature; protect the configured storage
   directory and backups.
 

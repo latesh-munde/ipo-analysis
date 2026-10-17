@@ -77,6 +77,9 @@ def make_fact(
         reason_code=None,
         evidence=EvidenceReference(
             document_id="doc-1",
+            source_document_sha256="a" * 64,
+            source_table_sha256="b" * 64,
+            source_cell_sha256="c" * 64,
             page_number=1,
             table_index=0,
             row_index=0,

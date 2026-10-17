@@ -5,6 +5,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+Sha256Digest = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+FinancialCurrency = Annotated[str, Field(pattern=r"^(?:INR|UNKNOWN)$")]
+
 
 class StatementType(StrEnum):
     PROFIT_AND_LOSS = "profit_and_loss"
@@ -36,6 +39,13 @@ class RestatementStatus(StrEnum):
     RESTATED = "restated"
     SUPERSEDED = "superseded"
     UNKNOWN = "unknown"
+
+
+class FinancialFactStatus(StrEnum):
+    REPORTED = "reported"
+    UNAVAILABLE = "unavailable"
+    UNVERIFIED = "unverified"
+    REJECTED = "rejected"
 
 
 class FinancialUnit(StrEnum):
@@ -165,7 +175,7 @@ class FinancialFactInput(BaseModel):
     statement_basis: StatementBasis
     audit_status: AuditStatus
     restatement_status: RestatementStatus
-    currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$|^UNKNOWN$")] = "UNKNOWN"
+    currency: FinancialCurrency = "UNKNOWN"
     unit: FinancialUnit
     page_number: Annotated[int, Field(ge=1)]
     table_index: Annotated[int, Field(ge=0)]
@@ -242,6 +252,9 @@ class FinancialAnalysisRequest(BaseModel):
 
 class EvidenceReference(BaseModel):
     document_id: str
+    source_document_sha256: Sha256Digest
+    source_table_sha256: Sha256Digest
+    source_cell_sha256: Sha256Digest
     page_number: int
     table_index: int
     row_index: int
@@ -251,6 +264,10 @@ class EvidenceReference(BaseModel):
     value_column_index: int
     original_label: str
     extracted_value: str
+    confirmed_value: str | None = None
+    review_status: str = "not_required"
+    reviewed_at: datetime | None = None
+    cell_box: list[float] | None = None
     extraction_method: str
     source_warnings: list[str]
 
@@ -267,13 +284,18 @@ class ReportedFinancialFact(BaseModel):
     statement_basis: StatementBasis
     audit_status: AuditStatus
     restatement_status: RestatementStatus
-    currency: str
+    currency: FinancialCurrency
     reported_value: Decimal | None
     normalized_value: Decimal | None
     reported_unit: FinancialUnit
-    status: str
+    status: FinancialFactStatus
     reason_code: str | None
     evidence: EvidenceReference
+
+
+class PersistedFinancialFact(ReportedFinancialFact):
+    revision: Annotated[int, Field(ge=1)]
+    created_at: datetime
 
 
 class ValidationSeverity(StrEnum):
@@ -345,7 +367,7 @@ class FinancialAnalysisReport(BaseModel):
     document_name: str
     document_type: str | None
     document_sha256: str
-    facts: list[ReportedFinancialFact]
+    facts: list[PersistedFinancialFact]
     metrics: list[FinancialMetric]
     validation_findings: list[ValidationFinding]
     validation_checks: list[ValidationCheck]

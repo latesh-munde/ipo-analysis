@@ -22,8 +22,13 @@ units, currencies, or investment conclusions.
    reported scale.
 3. Select the source table, the zero-based financial row and label column, the
    value column, and the zero-based period-header row.
-4. Add all relevant facts and choose **Calculate financial metrics**.
-5. Review backend-calculated values, formulas, statuses, source cells, findings,
+4. For any OCR-derived selected value, compare the highlighted source region,
+   correct the transcription if necessary, and explicitly confirm source-page
+   review. The UI keeps calculations disabled while a mapped OCR value remains
+   unreviewed.
+5. Add all relevant facts and choose **Calculate financial metrics**. The
+   backend independently enforces the OCR review gate.
+6. Review backend-calculated values, formulas, statuses, source cells, findings,
    cross-statement checks, and limitations.
 
 The UI submits source coordinates and declared metadata, never numeric fact
@@ -32,10 +37,11 @@ stored table rows and reads the reported amount from that cell.
 
 ## Phase 3 source contract
 
-Phase 3 currently exposes `ExtractedTable` with `document_id`, one-based
-`page_number`, `table_index`, `extraction_method`, raw `rows: list[list[str]]`,
-and table warnings. Row and column coordinates in analysis requests are
-zero-based. It does not produce canonical financial facts, fiscal periods,
+Phase 3 exposes `ExtractedTable` with `document_id`, one-based `page_number`,
+`table_index`, `extraction_method`, raw `rows: list[list[str]]`, and table
+warnings. OCR-layout candidates additionally retain per-cell PDF-page boxes and
+render/extraction metadata. Row and column coordinates in analysis requests
+are zero-based. Phase 3 does not produce canonical financial facts, fiscal periods,
 statement basis, currency/scale, audit/restatement metadata, or stable cell
 IDs. Page text and table text are raw extraction results and may contain OCR
 errors.
@@ -45,6 +51,23 @@ table and creates an ephemeral fact with deterministic ID and evidence for:
 document ID, PDF page, table, financial row/label cell, numeric value cell,
 period-header cell, and extraction method/warnings. Numeric input supplied
 outside that source table is not accepted.
+
+For `tesseract_ocr*` tables, the analysis service reads a persisted review
+record keyed by document/page/table/row/column and requires its stored original
+OCR string to match the current table cell. It parses only the reviewer's
+confirmed transcription. Without a matching review, the fact has status
+`unverified`, no reported numeric value, and reason `OCR_VALUE_UNVERIFIED`;
+dependent metrics are blocked. Evidence retains the extracted OCR string,
+confirmed value (when present), review status/time, extraction method, source
+box, and warnings. Review submissions require an explicit `source_checked`
+acknowledgment in addition to the confirmed string.
+
+The app has no authentication: the review record captures an action and time,
+not a verified reviewer identity. The current deployment decision is
+trusted-local, single-user use only; keep the server bound to `127.0.0.1` and
+do not expose it as a shared or network-accessible app. This review gate is a
+safety control, not a claim that OCR cell reconstruction or user-entered
+metadata is infallible.
 
 ## API
 
@@ -93,7 +116,18 @@ The existing `success/data/error/meta` response envelope contains source facts,
 metrics, validation findings/checks, formula versions, input fact IDs, evidence
 references, and limitations. Missing documents return 404, unready extractions
 return 409, and invalid/nonexistent evidence locators return a sanitized 422
-error.
+error. Each fact is validated against the current source table, saved as an
+immutable version, and returned with its revision and creation time. An
+unchanged mapping is idempotent; a changed value, review, mapping, or source
+table creates a later revision without deleting the previous version. The
+request supplies no numeric value: the service reads the cited source cell and
+uses only a current, matching OCR review when required.
+
+`GET /api/v1/documents/{document_id}/financial-facts` returns the latest
+revision for each fact ID. Add `include_history=true` to include prior versions.
+The endpoint supports `offset` and `limit` pagination (1–500). Each fact
+evidence reference includes the document, table, and cell SHA-256 values in
+addition to page/cell coordinates and OCR review evidence.
 
 ## Metrics and formula policies
 
@@ -153,8 +187,9 @@ or capex is blocked where the formula requires a positive magnitude.
 - Balance-sheet equation and cash-flow/cash-balance reconciliations return
   `pass`, `warning`, `failure`, or `not_checkable`; a missing component is not a
   pass. Reconciliation tolerance is configurable in rupees.
-- OCR and table extraction warnings remain visible. OCR-sourced facts require
-  manual verification against the original filing.
+- OCR and table extraction warnings remain visible. OCR-derived values cannot
+  contribute to analysis until a matching persisted review exists. A reviewer
+  must still verify line-item and period mapping against the filing.
 - Each metric contains formula text/version, input fact IDs, and the exact
   document/page/table/row/value/period-header evidence for every input.
 
@@ -179,12 +214,10 @@ fixtures; they do not require an IPO PDF, OCR, network access, or an LLM.
 
 ## Limitations and follow-up
 
-- The upstream Phase 3 service does not yet create or persist structured
-  financial facts. Mapping is a user-reviewed, on-demand step; automatic
-  statement/label extraction and cross-cell period interpretation remain
-  outstanding. Resolve this by adding a validated, evidence-linked fact schema
-  and repository at the Phase 3 extraction boundary, then adapt this service to
-  consume those facts directly.
+- Canonical facts are persisted only after an explicit mapping request and
+  source-cell validation. Automatic statement/label mapping and cross-cell
+  period interpretation remain outstanding; no missing value or metadata is
+  inferred.
 - Analysis is scoped to one document because the repository has no company/IPO
   identity or document-association model. DRHP/RHP/restatement conflicts across
   documents cannot yet be compared safely.
@@ -196,8 +229,16 @@ fixtures; they do not require an IPO PDF, OCR, network access, or an LLM.
   beyond explicitly mapped PAT, forecasts, valuation, AI interpretation,
   investment advice, report persistence, export, and PDF generation are not
   implemented.
-- No real prospectus was processed for verification; no PDF was needed for the
-  financial calculation and source-cell tests.
+- Candidate layout grouping remains heuristic. A local 200-DPI OCR comparison
+  on digitally encoded RHP statement pages 329, 330, and 334 found 615/618
+  numeric tokens exactly matching the PDF text layer and 10/628 native numeric
+  tokens not recovered in the sampled regions. A punctuation error that
+  changed numeric scale was observed. These pages are not scanned-table
+  qualification; OCR values remain blocked until source-reviewed.
+- Review records are local, have no authenticated reviewer identity, and are
+  not immutable/audited against a user account. The source PDF remains the
+  authority. Legacy review records without a source-cell hash are treated as
+  stale and require a new review.
 
 ## Related documentation
 

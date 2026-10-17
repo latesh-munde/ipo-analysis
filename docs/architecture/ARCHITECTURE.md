@@ -17,7 +17,9 @@ claim that RAG, MCP, or AI analysis is implemented unless confirmed in source.
 - Centralized HTTP, request-validation, and unexpected-exception handlers
 - Consistent API response envelope
 - PDF upload and page-level text/table extraction through application services
-- Local SQLite persistence for document metadata and extraction results
+- OCR-derived heuristic table candidates with persisted cell/page geometry and review state
+- Local SQLite persistence for document metadata, extraction results, and
+  versioned source-bound financial facts
 - Optional local Tesseract OCR for pages with little native text
 - pytest/HTTPX tests and Ruff quality checks
 
@@ -41,8 +43,11 @@ Application services
        +--> Document service -> local PDF storage and SQLite repository
        |                     -> PyMuPDF text/table extraction
        |                     -> optional local Tesseract OCR
+       |                     -> source-page rendering and persisted OCR-cell reviews
        +--> Financial-analysis service -> table-cell evidence resolution
        |                               -> Decimal normalization/validation
+       |                               -> server-side OCR-review gate
+       |                               -> persisted fact revisions
        |                               -> deterministic metrics/report
        +--> Optional AI interpretation/retrieval (future feature)
        |
@@ -95,17 +100,25 @@ are described in `../features/financial-analysis.md`.
 financial-fact metadata and source table coordinates. The analysis service
 resolves the value, line label, period-header cell, and extraction warnings from
 the existing document-table repository; it does not trust client numeric input.
+Validated source facts are persisted as immutable revisions and can be retrieved
+through `/api/v1/documents/{document_id}/financial-facts`. Each fact carries
+document, table, and cell hashes alongside the page/cell coordinates. OCR-derived
+values are eligible only after a persisted review matches the exact source-cell
+hash. Calculations use the confirmed transcription and retain the original OCR
+text in evidence. Unreviewed OCR facts are marked unverified, and dependent
+metrics are blocked.
 Pure calculations live in `app/financial/calculations.py`; the service
 coordinates document lookup and report assembly. Formula results use Decimal
 arithmetic and carry formula versions, fact IDs, and exact source references.
 The web page displays those same backend results and performs no financial
 calculations.
 
-Phase 3 currently stores raw strings rather than structured financial facts.
-Until that upstream contract exists, period, line item, unit, currency, basis,
-audit, and restatement metadata are explicitly mapped by the user. Reports are
-on-demand and not persisted. The one-document scope avoids attributing facts to
-an unverified company; cross-document DRHP/RHP analysis remains outstanding.
+The UI still requires explicit user mapping of period, line item, unit,
+currency, basis, audit, and restatement metadata; no missing metadata or values
+are inferred. Analysis reports are on-demand and not persisted, while their
+validated source facts are versioned in SQLite. The one-document scope avoids
+attributing facts to an unverified company; cross-document DRHP/RHP analysis
+remains outstanding.
 
 ### Future analysis components
 
