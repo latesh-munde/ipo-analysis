@@ -369,6 +369,9 @@ focused.
 - `python -m pip check`: passed.
 - `python -m ruff check .`: passed.
 - Formatting of changed Python files: passed.
+- Local browser smoke test: uploaded a synthetic one-page PDF through the UI
+  and verified the document metadata, DRHP label, page text, table tab, and
+  empty-table state.
 - Repository-wide `python -m ruff format --check .` still reports the existing
   formatting difference in `backend/app/core/logging.py`; that unrelated file
   was not changed.

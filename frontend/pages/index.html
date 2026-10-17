@@ -3,14 +3,180 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPO Analysis</title>
+    <meta
+        name="description"
+        content="Upload an IPO PDF and review source-linked extracted text and tables."
+    >
+    <title>IPO Document Reader</title>
     <link rel="stylesheet" href="/static/css/base.css">
     <script type="module" src="/static/js/app.js"></script>
 </head>
 <body>
-    <main>
-        <h1>IPO Analysis System</h1>
-        <p id="api-status">Checking backend connection...</p>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="IPO Analysis local home">
+            <span class="brand-mark" aria-hidden="true">IPO</span>
+            <span>IPO Analysis</span>
+        </a>
+        <div id="api-status" class="connection-status" role="status">
+            Connecting to local backend…
+        </div>
+    </header>
+
+    <main class="page-shell">
+        <section class="hero" aria-labelledby="page-title">
+            <p class="eyebrow">LOCAL DOCUMENT WORKSPACE</p>
+            <h1 id="page-title">Read an IPO document,<br>page by page.</h1>
+            <p class="hero-copy">
+                Upload a DRHP, RHP, or financial statement PDF to extract its
+                text and supported tables. Every result stays linked to its
+                source document and PDF page.
+            </p>
+            <p class="scope-note">
+                This tool extracts document content; it does not provide
+                investment advice or an apply/avoid recommendation.
+            </p>
+        </section>
+
+        <section class="upload-card" aria-labelledby="upload-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">START HERE</p>
+                    <h2 id="upload-title">Upload a PDF</h2>
+                </div>
+                <span class="local-pill">
+                    <span aria-hidden="true"></span>
+                    Processed locally
+                </span>
+            </div>
+
+            <form id="upload-form">
+                <label class="field-label" for="document-type">
+                    Document type <span class="optional-label">Optional</span>
+                </label>
+                <select id="document-type" name="document_type">
+                    <option value="">Choose a type, if known</option>
+                    <option value="DRHP">Draft Red Herring Prospectus (DRHP)</option>
+                    <option value="RHP">Red Herring Prospectus (RHP)</option>
+                    <option value="Financial statement">Financial statement</option>
+                    <option value="Other">Other IPO document</option>
+                </select>
+
+                <label class="field-label file-label" for="document-file">
+                    PDF file
+                </label>
+                <label class="file-picker" for="document-file">
+                    <span class="file-icon" aria-hidden="true">↑</span>
+                    <span class="file-picker-copy">
+                        <strong id="file-picker-title">Choose a PDF to analyze</strong>
+                        <span id="file-picker-detail">PDF format · Maximum size is set by the local server</span>
+                    </span>
+                    <span class="browse-button">Browse files</span>
+                    <input
+                        id="document-file"
+                        name="file"
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        required
+                    >
+                </label>
+
+                <div class="upload-actions">
+                    <p class="privacy-note">
+                        Files are stored in the server’s local document folder.
+                        Avoid uploading sensitive files on a shared computer.
+                    </p>
+                    <button id="upload-button" type="submit">
+                        <span>Extract document</span>
+                        <span aria-hidden="true">→</span>
+                    </button>
+                </div>
+            </form>
+            <p id="upload-status" class="upload-status" role="status" aria-live="polite"></p>
+        </section>
+
+        <section
+            id="results-section"
+            class="results-section"
+            aria-labelledby="results-title"
+            hidden
+        >
+            <div class="results-heading">
+                <div>
+                    <p class="eyebrow">EXTRACTION RESULTS</p>
+                    <h2 id="results-title">Document results</h2>
+                </div>
+                <span id="result-status" class="status-badge"></span>
+            </div>
+            <div id="document-summary" class="document-summary"></div>
+            <div id="warning-list" class="warning-list" hidden></div>
+
+            <div class="result-tabs" role="tablist" aria-label="Extracted results">
+                <button
+                    id="pages-tab"
+                    class="result-tab is-active"
+                    type="button"
+                    role="tab"
+                    aria-selected="true"
+                    aria-controls="pages-panel"
+                >
+                    Page text <span id="pages-count" class="count-pill">0</span>
+                </button>
+                <button
+                    id="tables-tab"
+                    class="result-tab"
+                    type="button"
+                    role="tab"
+                    aria-selected="false"
+                    aria-controls="tables-panel"
+                    tabindex="-1"
+                >
+                    Tables <span id="tables-count" class="count-pill">0</span>
+                </button>
+            </div>
+            <div id="pages-panel" class="results-panel" role="tabpanel" aria-labelledby="pages-tab"></div>
+            <div
+                id="tables-panel"
+                class="results-panel"
+                role="tabpanel"
+                aria-labelledby="tables-tab"
+                hidden
+            ></div>
+        </section>
+
+        <section class="how-it-works" aria-labelledby="how-title">
+            <div>
+                <p class="eyebrow">WHAT TO EXPECT</p>
+                <h2 id="how-title">Evidence first.<br>No invented numbers.</h2>
+            </div>
+            <ol class="workflow-list">
+                <li>
+                    <span>01</span>
+                    <div>
+                        <strong>Upload your PDF</strong>
+                        <p>We validate the file and recognize exact byte-for-byte duplicates.</p>
+                    </div>
+                </li>
+                <li>
+                    <span>02</span>
+                    <div>
+                        <strong>Extract pages and tables</strong>
+                        <p>Native text is extracted per page. OCR is optional and local; warnings remain visible.</p>
+                    </div>
+                </li>
+                <li>
+                    <span>03</span>
+                    <div>
+                        <strong>Review with source context</strong>
+                        <p>Use the PDF page numbers to verify extracted text and table cells against the original.</p>
+                    </div>
+                </li>
+            </ol>
+        </section>
+
+        <footer class="page-footer">
+            <span>Local IPO document workspace</span>
+            <a href="/docs" target="_blank" rel="noreferrer">API reference</a>
+        </footer>
     </main>
 </body>
 </html>

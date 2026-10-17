@@ -57,43 +57,98 @@ ipo-analysis/
 
 This is the intended structure for the current foundation. Keep documentation synchronized with the actual repository and do not create empty modules solely to match the diagram.
 
-## Local setup
+## Run locally and analyze a PDF
 
-Use Python 3.13.6 for current development. From the repository root:
+The FastAPI server serves both the website and API from the same local address.
+You do not need a separate frontend server or Node.js.
+
+### 1. Install and start the backend (Windows PowerShell)
+
+Run these commands from the repository root:
 
 ```powershell
 cd backend
-python --version
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-python -m uvicorn app.main:app --reload
-```
-
-The editable install includes the multipart upload parser and PyMuPDF. OCR is
-optional and runs locally: install Tesseract OCR and its language data, then set
-`DOCUMENT_OCR_ENABLED=true` and configure `DOCUMENT_OCR_TESSERACT_PATH` and
-`DOCUMENT_OCR_LANGUAGE` in `backend/.env`. Without OCR, pages needing OCR are
-retained with an explicit warning. No document content is sent to a remote service.
-
-If creating the environment for the first time:
-
-```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
+python -m uvicorn app.main:app --reload
 ```
 
-If `pyproject.toml` has not yet been configured for editable installation, install the dependencies listed in that file and resolve the packaging configuration before using `pip install -e`.
+If PowerShell reports that script execution is disabled, activate the
+environment for this terminal with:
 
-## Local URLs
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
 
-- Home page: http://127.0.0.1:8000/
-- Health endpoint: http://127.0.0.1:8000/api/v1/health
-- Interactive API docs: http://127.0.0.1:8000/docs
-- Static frontend assets: served under `/static/`
+Keep the terminal running while using the site. On startup, the API is at
+`http://127.0.0.1:8000`.
 
-These URLs describe the intended local development endpoints; confirm them against the current application configuration.
+### 2. Open the site and upload a PDF
+
+1. Open **http://127.0.0.1:8000/** in your browser.
+2. Confirm the header says **Local backend connected**.
+3. Optionally choose DRHP, RHP, financial statement, or another document type.
+4. Select a `.pdf` file and choose **Extract document**.
+5. Review the document status, metadata, and any warnings.
+6. Open **Page text** to review extracted content by one-based PDF page number.
+   Open **Tables** to review supported table rows and their source pages.
+7. Compare extracted content with the original PDF, particularly OCR results
+   and financial figures. OCR is not guaranteed to be accurate.
+
+The default upload limit is 50 MiB and the page limit is 2,000 pages. The server
+validates the file and reports invalid, encrypted, oversized, or unreadable PDF
+errors on the page. Re-uploading identical bytes shows the existing result
+instead of repeating extraction.
+
+The UI also displays the API reference at
+`http://127.0.0.1:8000/docs`; the health endpoint is
+`http://127.0.0.1:8000/api/v1/health`.
+
+### Optional local OCR for scanned pages
+
+Native-text PDFs work without OCR. OCR is disabled by default. To extract
+scanned pages, install the local Tesseract OCR program and its language data,
+copy `backend/.env.example` to `backend/.env`, then set:
+
+```dotenv
+DOCUMENT_OCR_ENABLED=true
+DOCUMENT_OCR_LANGUAGE=eng
+DOCUMENT_OCR_TESSERACT_PATH=tesseract
+```
+
+Set `DOCUMENT_OCR_TESSERACT_PATH` to the executable path if Tesseract is not on
+`PATH`. Restart the backend after changing `.env`. If OCR is disabled or
+unavailable, pages needing OCR remain in the results with a warning. No uploaded
+PDF is sent to a cloud OCR service. PyMuPDF is dual-licensed under AGPL-3.0 or
+an Artifex commercial license; confirm applicable terms before distributing or
+deploying this application.
+
+### Where local documents are stored
+
+By default, original PDFs and the SQLite document/index data are stored under
+`backend/data/documents/`. The folder is excluded from Git and is not served
+through the website. Protect this folder and its backups; this initial local
+feature does not encrypt files or implement user authentication. Do not use the
+development server to expose private uploaded documents to an untrusted network.
+
+To select another local folder, set `DOCUMENT_STORAGE_DIR` in `backend/.env`.
+Other supported limits and OCR settings are listed in
+[`backend/.env.example`](./backend/.env.example) and described in the
+[document-ingestion guide](./docs/features/document-ingestion.md).
+
+### Create the development environment (if needed)
+
+If the `py` launcher is unavailable, install Python 3.13 and create the virtual
+environment using that interpreter. Once the `.venv` exists, the quick start is:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload
+```
 
 ## Quality checks
 

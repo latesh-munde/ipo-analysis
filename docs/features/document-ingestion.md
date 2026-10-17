@@ -11,10 +11,14 @@ This feature does not perform financial analysis or recommendations.
 
 ## User workflow
 
-Upload one PDF to the versioned API. The service validates the file, assigns an
-internal UUID, hashes the bytes, extracts the document, and returns its status.
-Exact duplicate bytes return the original document and extraction results.
-Metadata, page results, and tables can be fetched separately.
+Open the same-origin web page at `http://127.0.0.1:8000/`, choose a document
+type if known, select a PDF, and choose **Extract document**. The page shows
+upload progress/errors, document status and metadata, warnings, expandable page
+text, and supported tables. The API can also be called directly. The service
+validates the file, assigns an internal UUID, hashes the bytes, extracts the
+document, and returns its status. Exact duplicate bytes return the original
+document and extraction results. Metadata, page results, and tables can be
+fetched separately.
 
 ## API
 
@@ -160,5 +164,7 @@ page-level warnings.
 
 Synthetic PDFs and mocked OCR exercise the upload, persistence, provenance,
 duplicate, validation, and extraction paths. No real IPO documents or OCR
-executable are needed for the test suite. Record the exact commands and outcomes
-in the Phase 3 plan when verification is complete.
+executable are needed for the test suite. A local browser smoke test also
+uploaded a synthetic one-page PDF and verified the displayed metadata, page
+text, and empty-table state. Record the exact commands and outcomes in the
+Phase 3 plan when verification is complete.

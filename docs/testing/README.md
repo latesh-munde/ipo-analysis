@@ -42,6 +42,8 @@ Current development interpreter: Python 3.13.6.
 - Exact duplicate bytes return the existing record without duplicate storage.
 - OCR selection and fallback behavior are tested without requiring Tesseract.
 - Document metadata and extraction results persist across service instances.
+- Local browser workflow displays upload status, source-linked page text,
+  extracted table results or the empty-table state, and document warnings.
 
 ## Rules
 
