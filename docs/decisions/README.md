@@ -2,6 +2,10 @@
 
 Use ADRs for durable decisions that materially affect architecture, dependencies, security, data, testing, or deployment. Do not write an ADR for every small implementation detail.
 
+Accepted decisions: [ADR-001](./ADR-001-technology-stack.md),
+[ADR-002](./ADR-002-application-foundation.md), and
+[ADR-003](./ADR-003-document-storage-and-extraction.md).
+
 ## Naming
 
 `ADR-NNN-short-decision-title.md`

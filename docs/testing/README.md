@@ -36,6 +36,14 @@ Current development interpreter: Python 3.13.6.
 - Named logger retrieval before configuration does not crash module imports.
 - Invalid logging levels are rejected.
 - Settings use the expected defaults and environment overrides.
+- Document uploads reject invalid, unsupported, encrypted, and oversized PDFs
+  with sanitized, structured errors.
+- Document extraction preserves page/table provenance and raw table values.
+- Exact duplicate bytes return the existing record without duplicate storage.
+- OCR selection and fallback behavior are tested without requiring Tesseract.
+- Document metadata and extraction results persist across service instances.
+- Local browser workflow displays upload status, source-linked page text,
+  extracted table results or the empty-table state, and document warnings.
 
 ## Rules
 

@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,16 +16,34 @@ from app.core.exceptions import (
     validation_exception_handler,
 )
 from app.core.logging import logger
+from app.services.document_repository import DocumentRepository
 
 settings = get_settings()
 
 logger.configure(settings.log_level)
 log = logger.get_logger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    database_path = settings.document_storage_dir.resolve() / "documents.sqlite3"
+    if database_path.is_file():
+        recovered_count = DocumentRepository(database_path).fail_interrupted()
+        if recovered_count:
+            log.warning(
+                "Marked interrupted documents as failed count=%s",
+                recovered_count,
+            )
+    log.info("Application startup completed")
+    yield
+    log.info("Application shutdown completed")
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
+    lifespan=lifespan,
 )
 
 app.add_exception_handler(
@@ -55,10 +74,3 @@ app.mount(
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "pages" / "index.html")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    log.info("Application startup completed")
-    yield
-    log.info("Application shutdown completed")

@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-This describes the current application foundation and the intended direction for IPO analysis. It does not claim that database persistence, document ingestion, RAG, MCP, or AI analysis is implemented unless confirmed in source code.
+This describes the current application foundation and Phase 3 document-ingestion implementation. It does not claim that RAG, MCP, or AI analysis is implemented unless confirmed in source code.
 
 ## Current foundation
 
@@ -14,6 +14,9 @@ This describes the current application foundation and the intended direction for
 - Python standard logging accessed through a project `Logger` singleton facade
 - Centralized HTTP, request-validation, and unexpected-exception handlers
 - Consistent API response envelope
+- PDF upload and page-level text/table extraction through application services
+- Local SQLite persistence for document metadata and extraction results
+- Optional local Tesseract OCR for pages with little native text
 - pytest/HTTPX tests and Ruff quality checks
 
 Verify these modules and their exact behavior in the current branch before making changes.
@@ -31,12 +34,13 @@ FastAPI entry point and middleware/handlers
 Versioned API router and input validation
        |
        v
-Application services (to be expanded)
+Application services
        |
-       +--> Document extraction (future feature)
+       +--> Document service -> local PDF storage and SQLite repository
+       |                     -> PyMuPDF text/table extraction
+       |                     -> optional local Tesseract OCR
        +--> Deterministic financial calculations (future feature)
        +--> Optional AI interpretation/retrieval (future feature)
-       +--> Persistence (decision pending)
        |
        v
 Consistent JSON response
@@ -68,12 +72,21 @@ Routes define HTTP contracts and delegate complex work to services. Schemas vali
 
 The browser renders pages and calls same-origin `/api/v1` endpoints. A centralized API client handles JSON parsing and standardized errors. Keep UI logic separate from backend business rules.
 
+### Document ingestion
+
+`/api/v1/documents` validates multipart PDF uploads, assigns UUID storage names,
+computes SHA-256, and returns the existing record for exact duplicates. PDF files
+and a SQLite database are kept under the configured local document storage
+directory, which is not mounted as static content. PyMuPDF extracts one result per
+PDF page and supported tables; optional local Tesseract OCR is attempted only for
+low-text pages. Page and table results retain document IDs and one-based PDF page
+numbers. Detailed API behavior and limitations are documented in
+`../features/document-ingestion.md`.
+
 ### Future analysis components
 
-- Document extraction: text/table extraction and OCR when needed.
 - Financial domain: deterministic, independently tested calculations.
 - AI integration: qualitative interpretation and evidence-grounded explanation only where useful.
-- Persistence: choose database and migrations after requirements are established.
 
 ## Financial evidence principles
 
