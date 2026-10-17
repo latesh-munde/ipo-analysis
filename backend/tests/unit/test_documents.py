@@ -305,6 +305,108 @@ def test_pages_are_retained_when_another_page_fails() -> None:
     assert status == DocumentStatus.COMPLETED_WITH_WARNINGS
 
 
+def test_extraction_deadline_preserves_completed_pages_and_marks_remaining(
+    monkeypatch,
+) -> None:
+    from app.services import pdf_extraction
+
+    now = [0.0]
+    monkeypatch.setattr(pdf_extraction.time, "monotonic", lambda: now[0])
+
+    class Page:
+        def get_text(self, _kind):
+            now[0] = 2.0
+            return "Text from the completed page."
+
+        def find_tables(self, **_kwargs):
+            return SimpleNamespace(tables=[])
+
+        def get_images(self):
+            return []
+
+        def get_drawings(self):
+            return []
+
+    class Pdf:
+        page_count = 3
+
+        def __init__(self):
+            self.loaded_pages = []
+
+        def load_page(self, page_index):
+            self.loaded_pages.append(page_index)
+            return Page()
+
+    pdf = Pdf()
+    pages, _, warnings, status = pdf_extraction.extract_pdf(
+        pdf,
+        "document-id",
+        Settings(document_extraction_timeout_seconds=1),
+    )
+
+    assert [page.page_number for page in pages] == [1, 2, 3]
+    assert pages[0].status == "completed_with_warnings"
+    assert "completed page" in pages[0].text
+    assert [page.status for page in pages[1:]] == ["not_processed", "not_processed"]
+    assert all(
+        page.warnings[0].code == "DOCUMENT_EXTRACTION_TIMEOUT" for page in pages[1:]
+    )
+    assert pdf.loaded_pages == [0]
+    assert (
+        sum(warning.code == "DOCUMENT_EXTRACTION_TIMEOUT" for warning in warnings) == 1
+    )
+    assert status == DocumentStatus.COMPLETED_WITH_WARNINGS
+
+
+def test_ocr_timeout_is_capped_by_remaining_document_deadline(
+    monkeypatch,
+) -> None:
+    from app.services import pdf_extraction
+
+    now = [0.0]
+    monkeypatch.setattr(pdf_extraction.time, "monotonic", lambda: now[0])
+    timeout_values = []
+
+    class Page:
+        rect = SimpleNamespace(width=600, height=800)
+
+        def get_text(self, _kind):
+            now[0] = 0.25
+            return "scan"
+
+        def find_tables(self, **_kwargs):
+            return SimpleNamespace(tables=[])
+
+        def get_images(self):
+            return [object()]
+
+        def get_drawings(self):
+            return []
+
+    class Pdf:
+        page_count = 1
+
+        def load_page(self, _page_index):
+            return Page()
+
+    def fake_ocr(*_args, timeout_seconds, **_kwargs):
+        timeout_values.append(timeout_seconds)
+        return OcrPageResult("Recognized text from this scanned page.", 0.9, [])
+
+    monkeypatch.setattr(pdf_extraction, "recognize_page_with_layout", fake_ocr)
+    pdf_extraction.extract_pdf(
+        Pdf(),
+        "document-id",
+        Settings(
+            document_ocr_enabled=True,
+            document_ocr_timeout_seconds=10,
+            document_extraction_timeout_seconds=1,
+        ),
+    )
+
+    assert timeout_values == [pytest.approx(0.75)]
+
+
 def test_table_cell_values_are_not_normalized() -> None:
     from app.services.pdf_extraction import extract_pdf
 

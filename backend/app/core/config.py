@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     document_ocr_language: str = "eng"
     document_ocr_tesseract_path: str = "tesseract"
     document_ocr_timeout_seconds: int = Field(default=30, gt=0)
+    document_extraction_timeout_seconds: int = Field(default=1800, gt=0)
     document_ocr_dpi: int = Field(default=200, ge=72, le=600)
     document_low_text_char_threshold: int = Field(default=40, ge=0)
     financial_reconciliation_tolerance_rupees: Decimal = Field(

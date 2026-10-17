@@ -107,7 +107,8 @@ Other validation codes include `FILENAME_REQUIRED`, `UNSUPPORTED_FILE_TYPE`,
 ## Processing, status, and provenance
 
 - Uploads are bounded by `DOCUMENT_MAX_UPLOAD_BYTES` and
-  `DOCUMENT_MAX_PAGES`; the defaults are 50 MiB and 2,000 pages.
+  `DOCUMENT_MAX_PAGES`; the defaults are 50 MiB and 2,000 pages. Extraction
+  also has a configurable 30-minute cooperative time budget.
 - Files are written using a generated UUID, never the client filename.
 - SQLite stores metadata, page results, table results, and warnings under the
   local storage directory. Stored PDFs are not served as static assets.
@@ -148,6 +149,13 @@ Other validation codes include `FILENAME_REQUIRED`, `UNSUPPORTED_FILE_TYPE`,
 - A document with no usable extracted text or tables is `failed`. Partial
   extraction or warnings produce `completed_with_warnings`; clean results are
   `completed`.
+- When the cooperative extraction budget is reached, completed pages are
+  preserved and pages not yet started are returned as `not_processed` with a
+  `DOCUMENT_EXTRACTION_TIMEOUT` warning. The Tesseract recognition subprocess
+  receives a timeout no greater than the remaining budget or its configured
+  per-page timeout, whichever is shorter. This is not a hard wall-clock
+  guarantee: an in-progress synchronous PyMuPDF operation cannot be interrupted
+  and may finish after the configured budget.
 - At application startup, stale `processing` records from an interrupted prior
   run are changed to `failed` with a `PROCESSING_INTERRUPTED` warning.
 - Exact byte duplicates (SHA-256) return the original record without re-running
@@ -172,6 +180,7 @@ Settings use `backend/.env` when running the app from `backend/`:
 | `DOCUMENT_STORAGE_DIR` | `data/documents` | Local PDF and SQLite storage directory |
 | `DOCUMENT_MAX_UPLOAD_BYTES` | `52428800` | Maximum upload size |
 | `DOCUMENT_MAX_PAGES` | `2000` | Maximum accepted PDF page count |
+| `DOCUMENT_EXTRACTION_TIMEOUT_SECONDS` | `1800` | Cooperative extraction time budget |
 | `DOCUMENT_OCR_ENABLED` | `false` | Enables local Tesseract OCR fallback |
 | `DOCUMENT_OCR_LANGUAGE` | `eng` | Tesseract language code |
 | `DOCUMENT_OCR_TESSERACT_PATH` | `tesseract` | Tesseract executable or PATH name |
@@ -208,8 +217,11 @@ page-level warnings.
   regions: 615 of 618 OCR numeric tokens matched exactly; 10 of 628 native
   numeric tokens were not recovered. The sample includes a punctuation error
   that changes numeric scale. These are not scanned-table qualification pages.
-- Native PDF parsing has upload/page-count bounds but no separate wall-clock
-  timeout. OCR has a per-page subprocess timeout.
+- Native PDF parsing has upload/page-count bounds and a cooperative
+  whole-extraction budget, but no hard wall-clock interruption for a running
+  PyMuPDF operation. OCR also has a per-page subprocess timeout capped by the
+  time remaining in the extraction budget. Extraction remains synchronous;
+  OCR concurrency policy and retry/resume attempt history are not implemented.
 - The Phase 2 application has no authentication or authorization layer.
   This is a trusted local single-user tool only: launch it bound to
   `127.0.0.1` and do not expose it as a shared or network-accessible app.

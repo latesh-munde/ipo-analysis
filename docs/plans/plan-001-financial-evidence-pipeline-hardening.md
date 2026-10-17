@@ -4,7 +4,8 @@
 - Created: 2026-10-17
 - Related plans: [Phase 3 ingestion](./phase-3-document-ingestion-extraction-plan.md),
   [Phase 4 analysis](./phase-4-financial-analysis-engine-plan.md),
-  [OCR number trust](./ocr-financial-number-trust-plan.md)
+  [OCR number trust](./ocr-financial-number-trust-plan.md),
+  [Large-document recovery](./plan-002-large-document-recovery.md)
 - Related features: [Document ingestion](../features/document-ingestion.md),
   [Financial analysis](../features/financial-analysis.md)
 
@@ -21,6 +22,40 @@ These gaps affect the trust chain from a PDF page to a financial metric. Work
 must proceed in small modules with measurable acceptance criteria. A passing
 OCR confidence score or a plausible-looking table is never sufficient evidence
 that a financial value is correct.
+
+## Outstanding limitation map and execution order
+
+The following blockers remain independent acceptance gates; completing one
+does not establish that the full financial-analysis pipeline is complete.
+
+1. **Scanned-table qualification:** heuristic geometry, wrapped/merged layouts,
+   and accuracy on scanned financial statements remain unqualified. Complete
+   the open Module 1 synthetic coverage and manually annotated scanned-page
+   benchmark before claiming broad OCR-table use. The supplied Jio RHP probes
+   are not a substitute for that benchmark.
+2. **Phase 3 fact production:** users still map source cells through analysis.
+   Implement a separate candidate-production workflow and automatic
+   classification only with deterministic rules, explicit uncertainty, and
+   source-bound evidence; do not infer missing values or silently approve
+   candidates. This extends Module 3.
+3. **Verified review identity:** remains deferred under the chosen trusted-local,
+   single-user deployment. Do not expose the app as a shared or network service
+   or label timestamps as verified reviewer identity. Revisit Module 2 only
+   after an identity and authorization model is selected.
+4. **Issuer/IPO association and cross-document analysis:** implement explicit,
+   auditable association first (Module 4), then company-scoped analysis
+   (Module 5); do not join documents by filename or extracted name.
+5. **Large-document recovery:** add bounded extraction time, OCR concurrency
+   limits, and retry/resume attempt history. This is Module 6 and can be
+   implemented incrementally without waiting for Modules 1–5. The current
+   update selects its first slice: a cooperative whole-extraction deadline
+   with remaining-time limits on OCR.
+
+The detailed operational plan is tracked in
+[Large-document recovery](./plan-002-large-document-recovery.md). Its first
+slice preserves successfully extracted pages, explicitly marks pages not
+started after the deadline, and does not claim a hard deadline for synchronous
+PyMuPDF calls. OCR concurrency control and retry/resume history remain open.
 
 ## Deployment decision
 
@@ -310,6 +345,11 @@ it must not be exposed as a shared service without Module 2 authentication.
 
 **Prerequisites:** Modules 1–5 for full feature completion; relevant subset
 checks may run earlier.
+
+**Status:** In progress. A cooperative extraction deadline and remaining-time
+cap for OCR are implemented; hard interruption of synchronous PyMuPDF work,
+explicit OCR concurrency policy, and retry/resume attempt history remain open.
+See [Large-document recovery](./plan-002-large-document-recovery.md).
 
 **Scope**
 

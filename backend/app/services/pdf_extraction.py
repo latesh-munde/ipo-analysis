@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 
 import pymupdf as fitz
 
@@ -11,6 +12,7 @@ from app.schemas.documents import (
     PageExtraction,
 )
 from app.services.pdf_ocr import (
+    OcrPageResult,
     OcrProcessingError,
     OcrUnavailableError,
     OcrWord,
@@ -19,6 +21,30 @@ from app.services.pdf_ocr import (
 
 log = logging.getLogger(__name__)
 OCR_LOW_CONFIDENCE_THRESHOLD = 60.0
+
+
+class _ExtractionDeadlineReached(Exception):
+    pass
+
+
+def _recognize_page_before_deadline(
+    page: fitz.Page,
+    settings: Settings,
+    deadline: float,
+) -> OcrPageResult:
+    remaining_seconds = deadline - time.monotonic()
+    if remaining_seconds <= 0:
+        raise _ExtractionDeadlineReached
+    return recognize_page_with_layout(
+        page,
+        executable=settings.document_ocr_tesseract_path,
+        language=settings.document_ocr_language,
+        timeout_seconds=min(
+            settings.document_ocr_timeout_seconds,
+            remaining_seconds,
+        ),
+        dpi=settings.document_ocr_dpi,
+    )
 
 
 def extract_pdf(
@@ -36,9 +62,47 @@ def extract_pdf(
     pages: list[PageExtraction] = []
     tables: list[ExtractedTable] = []
     document_warnings: list[ExtractionWarning] = []
+    deadline = time.monotonic() + settings.document_extraction_timeout_seconds
+    deadline_warning_added = False
+
+    def deadline_warning(page_number: int | None = None) -> ExtractionWarning:
+        nonlocal deadline_warning_added
+        message = (
+            "The configured extraction time limit was reached; no further pages "
+            "were started."
+        )
+        if not deadline_warning_added:
+            document_warnings.append(
+                ExtractionWarning(
+                    code="DOCUMENT_EXTRACTION_TIMEOUT",
+                    message=message,
+                )
+            )
+            deadline_warning_added = True
+        return ExtractionWarning(
+            code="DOCUMENT_EXTRACTION_TIMEOUT",
+            message=message,
+            page_number=page_number,
+        )
 
     for page_index in range(pdf.page_count):
         page_number = page_index + 1
+        if time.monotonic() >= deadline:
+            warning = deadline_warning(page_number)
+            pages.append(
+                PageExtraction(
+                    document_id=document_id,
+                    page_number=page_number,
+                    text="",
+                    native_text="",
+                    extraction_method="not_processed",
+                    status="not_processed",
+                    character_count=0,
+                    warnings=[warning],
+                )
+            )
+            continue
+
         page_warnings: list[ExtractionWarning] = []
         page_tables: list[ExtractedTable] = []
         try:
@@ -54,6 +118,9 @@ def extract_pdf(
                 message="This page could not be read.",
                 page_number=page_number,
             )
+            page_warnings = [warning]
+            if time.monotonic() >= deadline:
+                page_warnings.append(deadline_warning(page_number))
             pages.append(
                 PageExtraction(
                     document_id=document_id,
@@ -63,10 +130,15 @@ def extract_pdf(
                     extraction_method="native_pdf",
                     status="failed",
                     character_count=0,
-                    warnings=[warning],
+                    warnings=page_warnings,
                 )
             )
             document_warnings.append(warning)
+            document_warnings.extend(
+                page_warning
+                for page_warning in page_warnings
+                if page_warning.code != "DOCUMENT_EXTRACTION_TIMEOUT"
+            )
             continue
 
         native_text = ""
@@ -167,12 +239,10 @@ def extract_pdf(
                 )
             else:
                 try:
-                    ocr_result = recognize_page_with_layout(
+                    ocr_result = _recognize_page_before_deadline(
                         page,
-                        executable=settings.document_ocr_tesseract_path,
-                        language=settings.document_ocr_language,
-                        timeout_seconds=settings.document_ocr_timeout_seconds,
-                        dpi=settings.document_ocr_dpi,
+                        settings,
+                        deadline,
                     )
                     ocr_text, confidence = ocr_result.text, ocr_result.confidence
                     if len(ocr_text.strip()) > len(native_text.strip()):
@@ -295,6 +365,13 @@ def extract_pdf(
                             page_number=page_number,
                         )
                     )
+                except _ExtractionDeadlineReached:
+                    page_warnings.append(deadline_warning(page_number))
+
+        if time.monotonic() >= deadline and not any(
+            warning.code == "DOCUMENT_EXTRACTION_TIMEOUT" for warning in page_warnings
+        ):
+            page_warnings.append(deadline_warning(page_number))
 
         if native_failed and not text.strip():
             status = "failed"
@@ -321,7 +398,11 @@ def extract_pdf(
             )
         )
         tables.extend(page_tables)
-        document_warnings.extend(page_warnings)
+        document_warnings.extend(
+            warning
+            for warning in page_warnings
+            if warning.code != "DOCUMENT_EXTRACTION_TIMEOUT"
+        )
 
     has_usable_content = any(page.text.strip() for page in pages) or bool(tables)
     has_failures = any(page.status == "failed" for page in pages)

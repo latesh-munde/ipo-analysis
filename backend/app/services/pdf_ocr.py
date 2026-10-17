@@ -44,7 +44,7 @@ def recognize_page(
     *,
     executable: str,
     language: str,
-    timeout_seconds: int,
+    timeout_seconds: float,
     dpi: int,
 ) -> tuple[str, float | None]:
     result = recognize_page_with_layout(
@@ -62,7 +62,7 @@ def recognize_page_with_layout(
     *,
     executable: str,
     language: str,
-    timeout_seconds: int,
+    timeout_seconds: float,
     dpi: int,
 ) -> OcrPageResult:
     command = shutil.which(executable)

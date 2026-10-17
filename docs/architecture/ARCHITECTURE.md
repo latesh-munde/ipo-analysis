@@ -21,6 +21,7 @@ claim that RAG, MCP, or AI analysis is implemented unless confirmed in source.
 - Local SQLite persistence for document metadata, extraction results, and
   versioned source-bound financial facts
 - Optional local Tesseract OCR for pages with little native text
+- Configurable cooperative PDF extraction deadline with remaining-time OCR cap
 - pytest/HTTPX tests and Ruff quality checks
 
 Verify these modules and their exact behavior in the current branch before making changes.

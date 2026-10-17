@@ -106,10 +106,12 @@ Keep the terminal running while using the site. On startup, the API is at
    Analysis reports are shown in the web application and are not persisted or
    exported. Validated source facts are saved locally as versioned records.
 
-The default upload limit is 50 MiB and the page limit is 2,000 pages. The server
-validates the file and reports invalid, encrypted, oversized, or unreadable PDF
-errors on the page. Re-uploading identical bytes shows the existing result
-instead of repeating extraction.
+The default upload limit is 50 MiB and the page limit is 2,000 pages. Extraction
+has a 30-minute cooperative time budget by default; it preserves completed pages
+and reports pages not started after timeout. The server validates the file and
+reports invalid, encrypted, oversized, or unreadable PDF errors on the page.
+Re-uploading identical bytes shows the existing result instead of repeating
+extraction.
 
 The UI also displays the API reference at
 `http://127.0.0.1:8000/docs`; the health endpoint is
