@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta
         name="description"
-        content="Upload an IPO PDF and review source-linked extracted text and tables."
+    content="Extract IPO PDF tables and calculate evidence-linked financial metrics."
     >
     <title>IPO Document Reader</title>
     <link rel="stylesheet" href="/static/css/base.css">
@@ -141,6 +141,149 @@
                 aria-labelledby="tables-tab"
                 hidden
             ></div>
+
+            <section class="analysis-builder" aria-labelledby="analysis-title">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">DETERMINISTIC CALCULATIONS</p>
+                        <h2 id="analysis-title">Financial analysis</h2>
+                    </div>
+                </div>
+                <p class="analysis-note">
+                    Phase 3 extracts raw table cells, not validated financial facts.
+                    Map each line item to its exact source row and value cell. Enter
+                    dates, units, currency, and statement basis as shown in the filing;
+                    no financial values are typed or inferred here.
+                </p>
+                <form id="fact-form" class="fact-form">
+                    <div class="fact-fields">
+                        <label class="field-label" for="line-item">Financial line item</label>
+                        <select id="line-item" required>
+                            <option value="revenue_from_operations">Revenue from operations</option>
+                            <option value="other_income">Other income</option>
+                            <option value="total_income">Total income</option>
+                            <option value="cost_of_sales">Cost of sales</option>
+                            <option value="operating_profit">Operating profit (EBIT)</option>
+                            <option value="finance_costs">Finance costs</option>
+                            <option value="depreciation_amortization">Depreciation and amortization</option>
+                            <option value="profit_before_tax">Profit before tax (PBT)</option>
+                            <option value="tax_expense">Tax expense</option>
+                            <option value="profit_after_tax">Profit after tax (PAT)</option>
+                            <option value="basic_eps">Reported basic EPS</option>
+                            <option value="diluted_eps">Reported diluted EPS</option>
+                            <option value="current_assets">Current assets</option>
+                            <option value="non_current_assets">Non-current assets</option>
+                            <option value="inventories">Inventories</option>
+                            <option value="trade_receivables">Trade receivables</option>
+                            <option value="other_bank_balances">Other bank balances</option>
+                            <option value="cash_and_equivalents">Cash and cash equivalents</option>
+                            <option value="total_assets">Total assets</option>
+                            <option value="share_capital">Share capital</option>
+                            <option value="reserves">Reserves</option>
+                            <option value="total_equity">Total equity</option>
+                            <option value="total_liabilities">Total liabilities</option>
+                            <option value="current_liabilities">Current liabilities</option>
+                            <option value="non_current_liabilities">Non-current liabilities</option>
+                            <option value="trade_payables">Trade payables</option>
+                            <option value="current_borrowings">Current borrowings</option>
+                            <option value="non_current_borrowings">Non-current borrowings</option>
+                            <option value="lease_liabilities">Lease liabilities</option>
+                            <option value="total_equity_and_liabilities">Total equity and liabilities</option>
+                            <option value="cash_from_operating_activities">Cash from operating activities (CFO)</option>
+                            <option value="cash_from_investing_activities">Cash from investing activities (CFI)</option>
+                            <option value="cash_from_financing_activities">Cash from financing activities (CFF)</option>
+                            <option value="capital_expenditure">Capital expenditure</option>
+                            <option value="net_cash_movement">Reported net cash movement</option>
+                            <option value="opening_cash">Opening cash</option>
+                            <option value="closing_cash">Closing cash</option>
+                        </select>
+
+                        <label class="field-label" for="period-label">Period label</label>
+                        <input id="period-label" type="text" maxlength="80" placeholder="FY 2025" required>
+
+                        <label class="field-label" for="period-kind">Period type</label>
+                        <select id="period-kind" required>
+                            <option value="">Choose period type</option>
+                            <option value="annual">Annual</option>
+                            <option value="interim">Interim</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="point_in_time">Point in time</option>
+                        </select>
+
+                        <div id="flow-dates" class="date-fields">
+                            <label class="field-label" for="period-start">Period start</label>
+                            <input id="period-start" type="date">
+                            <label class="field-label" for="period-end">Period end</label>
+                            <input id="period-end" type="date">
+                        </div>
+                        <div id="as-of-field" hidden>
+                            <label class="field-label" for="as-of-date">Balance date</label>
+                            <input id="as-of-date" type="date">
+                        </div>
+
+                        <label class="field-label" for="statement-basis">Statement basis</label>
+                        <select id="statement-basis" required>
+                            <option value="">Choose basis</option>
+                            <option value="consolidated">Consolidated</option>
+                            <option value="standalone">Standalone</option>
+                            <option value="unknown">Unknown</option>
+                        </select>
+
+                        <label class="field-label" for="audit-status">Audit status</label>
+                        <select id="audit-status" required>
+                            <option value="">Choose audit status</option>
+                            <option value="audited">Audited</option>
+                            <option value="unaudited">Unaudited</option>
+                            <option value="unknown">Unknown</option>
+                        </select>
+
+                        <label class="field-label" for="restatement-status">Restatement status</label>
+                        <select id="restatement-status" required>
+                            <option value="">Choose restatement status</option>
+                            <option value="as_published">As published</option>
+                            <option value="restated">Restated</option>
+                            <option value="superseded">Superseded</option>
+                            <option value="unknown">Unknown</option>
+                        </select>
+
+                        <label class="field-label" for="currency">Currency</label>
+                        <select id="currency" required>
+                            <option value="">Choose currency</option>
+                            <option value="INR">INR</option>
+                            <option value="UNKNOWN">Unknown</option>
+                        </select>
+
+                        <label class="field-label" for="financial-unit">Reported unit</label>
+                        <select id="financial-unit" required>
+                            <option value="">Choose unit</option>
+                            <option value="rupees">Rupees</option>
+                            <option value="thousand_rupees">Thousand rupees</option>
+                            <option value="lakh_rupees">Lakh rupees</option>
+                            <option value="crore_rupees">Crore rupees</option>
+                            <option value="rupees_per_share">Rupees per share (EPS)</option>
+                        </select>
+
+                        <label class="field-label" for="source-table">Source table</label>
+                        <select id="source-table" required></select>
+
+                        <label class="field-label" for="period-header-row">Period-header row</label>
+                        <input id="period-header-row" type="number" min="0" step="1" value="0" required>
+                        <label class="field-label" for="source-row">Zero-based row</label>
+                        <input id="source-row" type="number" min="0" step="1" value="0" required>
+                        <label class="field-label" for="label-column">Label column</label>
+                        <input id="label-column" type="number" min="0" step="1" value="0" required>
+                        <label class="field-label" for="value-column">Value column</label>
+                        <input id="value-column" type="number" min="0" step="1" value="1" required>
+                    </div>
+                    <button id="add-fact-button" type="submit">Add source fact</button>
+                </form>
+                <div id="fact-list" class="fact-list" aria-live="polite"></div>
+                <button id="analyze-button" class="secondary-button" type="button" disabled>
+                    Calculate financial metrics
+                </button>
+                <p id="analysis-status" class="upload-status" role="status" aria-live="polite"></p>
+                <div id="analysis-report" class="analysis-report" hidden></div>
+            </section>
         </section>
 
         <section class="how-it-works" aria-labelledby="how-title">

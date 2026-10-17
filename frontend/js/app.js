@@ -17,7 +17,88 @@ const pagesTab = document.querySelector("#pages-tab");
 const tablesTab = document.querySelector("#tables-tab");
 const pagesCount = document.querySelector("#pages-count");
 const tablesCount = document.querySelector("#tables-count");
+const factForm = document.querySelector("#fact-form");
+const lineItemSelect = document.querySelector("#line-item");
+const periodKindSelect = document.querySelector("#period-kind");
+const periodStart = document.querySelector("#period-start");
+const periodEnd = document.querySelector("#period-end");
+const asOfDate = document.querySelector("#as-of-date");
+const flowDates = document.querySelector("#flow-dates");
+const asOfField = document.querySelector("#as-of-field");
+const sourceTableSelect = document.querySelector("#source-table");
+const periodHeaderRow = document.querySelector("#period-header-row");
+const sourceRow = document.querySelector("#source-row");
+const labelColumn = document.querySelector("#label-column");
+const valueColumn = document.querySelector("#value-column");
+const factList = document.querySelector("#fact-list");
+const analyzeButton = document.querySelector("#analyze-button");
+const analysisStatus = document.querySelector("#analysis-status");
+const analysisReport = document.querySelector("#analysis-report");
 const PAGE_SIZE = 500;
+const POINT_IN_TIME_ITEMS = new Set([
+    "current_assets",
+    "non_current_assets",
+    "inventories",
+    "trade_receivables",
+    "other_bank_balances",
+    "cash_and_equivalents",
+    "total_assets",
+    "share_capital",
+    "reserves",
+    "total_equity",
+    "total_liabilities",
+    "current_liabilities",
+    "non_current_liabilities",
+    "trade_payables",
+    "current_borrowings",
+    "non_current_borrowings",
+    "lease_liabilities",
+    "total_equity_and_liabilities",
+    "opening_cash",
+    "closing_cash",
+]);
+const LINE_ITEM_STATEMENTS = {
+    revenue_from_operations: "profit_and_loss",
+    other_income: "profit_and_loss",
+    total_income: "profit_and_loss",
+    cost_of_sales: "profit_and_loss",
+    operating_profit: "profit_and_loss",
+    finance_costs: "profit_and_loss",
+    depreciation_amortization: "profit_and_loss",
+    profit_before_tax: "profit_and_loss",
+    tax_expense: "profit_and_loss",
+    profit_after_tax: "profit_and_loss",
+    basic_eps: "profit_and_loss",
+    diluted_eps: "profit_and_loss",
+    current_assets: "balance_sheet",
+    non_current_assets: "balance_sheet",
+    inventories: "balance_sheet",
+    trade_receivables: "balance_sheet",
+    other_bank_balances: "balance_sheet",
+    cash_and_equivalents: "balance_sheet",
+    total_assets: "balance_sheet",
+    share_capital: "balance_sheet",
+    reserves: "balance_sheet",
+    total_equity: "balance_sheet",
+    total_liabilities: "balance_sheet",
+    current_liabilities: "balance_sheet",
+    non_current_liabilities: "balance_sheet",
+    trade_payables: "balance_sheet",
+    current_borrowings: "balance_sheet",
+    non_current_borrowings: "balance_sheet",
+    lease_liabilities: "balance_sheet",
+    total_equity_and_liabilities: "balance_sheet",
+    cash_from_operating_activities: "cash_flow",
+    cash_from_investing_activities: "cash_flow",
+    cash_from_financing_activities: "cash_flow",
+    capital_expenditure: "cash_flow",
+    net_cash_movement: "cash_flow",
+    opening_cash: "cash_flow",
+    closing_cash: "cash_flow",
+};
+let selectedDocumentId = null;
+let extractedTables = [];
+let selectedFacts = [];
 
 fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -87,6 +168,10 @@ form.addEventListener("submit", async (event) => {
 pagesTab.addEventListener("click", () => selectResultTab("pages"));
 tablesTab.addEventListener("click", () => selectResultTab("tables"));
 
+lineItemSelect.addEventListener("change", updatePeriodFields);
+factForm.addEventListener("submit", addSelectedFact);
+analyzeButton.addEventListener("click", calculateFinancialAnalysis);
+
 for (const tab of [pagesTab, tablesTab]) {
     tab.addEventListener("keydown", (event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
@@ -134,6 +219,15 @@ async function fetchAllResults(path) {
 }
 
 function renderResults(documentInfo, pages, tables) {
+    selectedDocumentId = documentInfo.document_id;
+    extractedTables = tables;
+    selectedFacts = [];
+    analysisReport.replaceChildren();
+    analysisReport.hidden = true;
+    clearAnalysisStatus();
+    populateSourceTables(tables);
+    renderSelectedFacts();
+    updatePeriodFields();
     resultsSection.hidden = false;
     resultStatus.textContent = statusLabel(documentInfo.status);
     resultStatus.className = "status-badge";
@@ -142,7 +236,6 @@ function renderResults(documentInfo, pages, tables) {
     } else if (documentInfo.status === "failed") {
         resultStatus.classList.add("is-error");
     }
-
     renderSummary(documentInfo, pages.length, tables.length);
     renderWarnings(documentInfo.warnings ?? []);
     renderPages(pages);
@@ -152,6 +245,307 @@ function renderResults(documentInfo, pages, tables) {
     selectResultTab("pages");
 }
 
+function populateSourceTables(tables) {
+    sourceTableSelect.replaceChildren();
+    const placeholder = createElement("option", "", "Choose a source table");
+    placeholder.value = "";
+    sourceTableSelect.append(placeholder);
+    for (const table of tables) {
+        const option = createElement(
+            "option",
+            "",
+            `PDF page ${table.page_number} · table ${table.table_index}`,
+        );
+        option.value = `${table.page_number}:${table.table_index}`;
+        sourceTableSelect.append(option);
+    }
+    analyzeButton.disabled = tables.length === 0;
+}
+
+function updatePeriodFields() {
+    const pointInTime = POINT_IN_TIME_ITEMS.has(lineItemSelect.value);
+    periodKindSelect.value = pointInTime ? "point_in_time" : "annual";
+    periodKindSelect.disabled = pointInTime;
+    flowDates.hidden = pointInTime;
+    periodStart.required = !pointInTime;
+    periodEnd.required = !pointInTime;
+    asOfField.hidden = !pointInTime;
+    asOfDate.required = pointInTime;
+}
+
+function addSelectedFact(event) {
+    event.preventDefault();
+    const [pageValue, tableValue] = sourceTableSelect.value.split(":");
+    const sourceTable = extractedTables.find(
+        (table) =>
+            table.page_number === Number(pageValue) &&
+            table.table_index === Number(tableValue),
+    );
+    const rowIndex = Number(sourceRow.value);
+    const periodHeaderRowIndex = Number(periodHeaderRow.value);
+    const labelIndex = Number(labelColumn.value);
+    const valueIndex = Number(valueColumn.value);
+    if (
+        !sourceTable ||
+        !Number.isInteger(rowIndex) ||
+        !Number.isInteger(periodHeaderRowIndex) ||
+        !Number.isInteger(labelIndex) ||
+        !Number.isInteger(valueIndex) ||
+        rowIndex < 0 ||
+        periodHeaderRowIndex < 0 ||
+        rowIndex >= sourceTable.rows.length ||
+        periodHeaderRowIndex >= sourceTable.rows.length ||
+        labelIndex < 0 ||
+        valueIndex < 0 ||
+        labelIndex >= sourceTable.rows[rowIndex].length ||
+        valueIndex >= sourceTable.rows[rowIndex].length ||
+        labelIndex === valueIndex
+    ) {
+        showAnalysisStatus(
+            "Choose an existing source row and separate label and value cells.",
+            "error",
+        );
+        return;
+    }
+
+    const lineItem = lineItemSelect.value;
+    const pointInTime = POINT_IN_TIME_ITEMS.has(lineItem);
+    selectedFacts.push({
+        line_item_code: lineItem,
+        statement_type: LINE_ITEM_STATEMENTS[lineItem],
+        period_label: document.querySelector("#period-label").value.trim(),
+        period_kind: periodKindSelect.value,
+        period_start: pointInTime ? null : periodStart.value,
+        period_end: pointInTime ? null : periodEnd.value,
+        as_of_date: pointInTime ? asOfDate.value : null,
+        statement_basis: document.querySelector("#statement-basis").value,
+        audit_status: document.querySelector("#audit-status").value,
+        restatement_status: document.querySelector("#restatement-status").value,
+        currency: document.querySelector("#currency").value,
+        unit: document.querySelector("#financial-unit").value,
+        page_number: sourceTable.page_number,
+        table_index: sourceTable.table_index,
+        row_index: rowIndex,
+        period_header_row_index: periodHeaderRowIndex,
+        label_column_index: labelIndex,
+        value_column_index: valueIndex,
+    });
+    renderSelectedFacts();
+    clearAnalysisStatus();
+}
+
+function renderSelectedFacts() {
+    factList.replaceChildren();
+    if (selectedFacts.length === 0) {
+        factList.append(
+            createElement(
+                "p",
+                "empty-state",
+                "No source facts mapped yet. Values are read from selected extracted table cells.",
+            ),
+        );
+        analyzeButton.textContent = "Calculate financial metrics";
+        analyzeButton.disabled = extractedTables.length === 0;
+        return;
+    }
+    const heading = createElement("h3", "", `Mapped source facts (${selectedFacts.length})`);
+    factList.append(heading);
+    selectedFacts.forEach((fact, index) => {
+        const source = extractedTables.find(
+            (table) =>
+                table.page_number === fact.page_number &&
+                table.table_index === fact.table_index,
+        );
+        const row = source.rows[fact.row_index];
+        const item = createElement("div", "fact-item");
+        const periodCell =
+            source.rows[fact.period_header_row_index][fact.value_column_index];
+        const summaryText = `${lineItemLabel(fact.line_item_code)} · ${fact.period_label} (“${periodCell}”) · ${row[fact.label_column_index]}: ${row[fact.value_column_index]} · page ${fact.page_number}, table ${fact.table_index}, row ${fact.row_index}`;
+        const remove = createElement("button", "remove-fact", "Remove");
+        remove.type = "button";
+        remove.addEventListener("click", () => {
+            selectedFacts.splice(index, 1);
+            renderSelectedFacts();
+        });
+        item.append(createElement("span", "", summaryText), remove);
+        factList.append(item);
+    });
+    analyzeButton.textContent = `Calculate ${selectedFacts.length} mapped fact(s)`;
+    analyzeButton.disabled = false;
+}
+
+async function calculateFinancialAnalysis() {
+    if (!selectedDocumentId || selectedFacts.length === 0) {
+        showAnalysisStatus("Map at least one source fact before calculating.", "error");
+        return;
+    }
+    analyzeButton.disabled = true;
+    showAnalysisStatus("Calculating metrics from the selected source cells…");
+    try {
+        const report = await apiRequest(
+            `/documents/${encodeURIComponent(selectedDocumentId)}/financial-analysis`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ facts: selectedFacts }),
+            },
+        );
+        renderFinancialReport(report);
+        showAnalysisStatus(
+            "Analysis generated. Review unavailable values, findings, and source references.",
+            "success",
+        );
+    } catch (error) {
+        showAnalysisStatus(error.message, "error");
+    } finally {
+        analyzeButton.disabled = selectedFacts.length === 0;
+    }
+}
+
+function renderFinancialReport(report) {
+    analysisReport.replaceChildren();
+    analysisReport.hidden = false;
+    const reportHeader = createElement("div", "report-heading");
+    reportHeader.append(
+        createElement("h3", "", "Calculated metrics"),
+        createElement(
+            "p",
+            "",
+            `${report.facts.length} cited fact(s) · Formula set ${report.formula_set_version} · Generated ${formatDate(report.generated_at)}`,
+        ),
+    );
+    analysisReport.append(reportHeader);
+
+    const metricTable = createElement("table", "metric-table");
+    const head = createElement("thead");
+    const headerRow = createElement("tr");
+    for (const title of ["Metric", "Period", "Result", "Status", "Formula and source facts"]) {
+        headerRow.append(createElement("th", "", title));
+    }
+    head.append(headerRow);
+    metricTable.append(head);
+    const body = createElement("tbody");
+    for (const metric of report.metrics) {
+        const row = createElement("tr");
+        row.append(
+            createElement("th", "", metric.display_name),
+            createElement("td", "", metric.period_label),
+            createElement(
+                "td",
+                "metric-value",
+                metric.status === "calculated"
+                    ? `${metric.value} ${metric.unit}`
+                    : metric.reason_code || "Unavailable",
+            ),
+            createElement("td", `metric-status is-${metric.status}`, statusLabel(metric.status)),
+        );
+        const detailCell = createElement("td");
+        detailCell.append(createElement("code", "formula-text", metric.formula));
+        if (metric.input_fact_ids.length) {
+            const evidenceList = createElement("ul", "metric-evidence");
+            for (const evidence of metric.evidence) {
+                evidenceList.append(
+                    createElement(
+                        "li",
+                        "",
+                        `PDF page ${evidence.page_number}, table ${evidence.table_index}, row ${evidence.row_index}, value column ${evidence.value_column_index} · period header row ${evidence.period_header_row_index}: “${evidence.period_header_text}” · “${evidence.original_label}” = “${evidence.extracted_value}”`,
+                    ),
+                );
+            }
+            detailCell.append(evidenceList);
+        }
+        if (metric.finding_ids.length) {
+            detailCell.append(
+                createElement(
+                    "p",
+                    "metric-findings",
+                    `Related finding(s): ${metric.finding_codes.join(", ")} · ${metric.finding_ids.join(", ")}`,
+                ),
+            );
+        }
+        row.append(detailCell);
+        body.append(row);
+    }
+    metricTable.append(body);
+    const tableScroll = createElement("div", "table-scroll");
+    tableScroll.append(metricTable);
+    analysisReport.append(tableScroll);
+
+    const factHeading = createElement("h3", "", "Source facts");
+    analysisReport.append(factHeading);
+    const factTable = createElement("table", "metric-table");
+    const factBody = createElement("tbody");
+    for (const fact of report.facts) {
+        const row = createElement("tr");
+        row.append(
+            createElement("th", "", lineItemLabel(fact.line_item_code)),
+            createElement("td", "", fact.period_label),
+            createElement(
+                "td",
+                "",
+                fact.normalized_value === null
+                    ? fact.reason_code || "Value unavailable"
+                    : `${fact.normalized_value} ${fact.currency}`,
+            ),
+            createElement(
+                "td",
+                "",
+                `${fact.status} · ${fact.statement_basis} · ${fact.audit_status} · ${fact.restatement_status} · reported in ${fact.reported_unit}`,
+            ),
+            createElement(
+                "td",
+                "",
+                `PDF page ${fact.evidence.page_number} · table ${fact.evidence.table_index} · row ${fact.evidence.row_index} · period header “${fact.evidence.period_header_text}” · ${fact.evidence.original_label}: ${fact.evidence.extracted_value}`,
+            ),
+        );
+        factBody.append(row);
+    }
+    factTable.append(factBody);
+    const factScroll = createElement("div", "table-scroll");
+    factScroll.append(factTable);
+    analysisReport.append(factScroll);
+
+    appendReportList(analysisReport, "Validation findings", report.validation_findings, (finding) =>
+        `${finding.severity.toUpperCase()} · ${finding.code}: ${finding.message}`,
+    );
+    appendReportList(analysisReport, "Cross-statement checks", report.validation_checks, (check) =>
+        `${check.status} · ${check.code}: ${check.message}${check.difference === null ? "" : ` (difference ${check.difference}; tolerance ${check.tolerance})`}`,
+    );
+    appendReportList(analysisReport, "Limitations", report.limitations, (item) => item);
+}
+
+function appendReportList(container, title, items, label) {
+    const section = createElement("section", "report-notes");
+    section.append(createElement("h3", "", title));
+    if (items.length === 0) {
+        section.append(createElement("p", "", "None reported."));
+    } else {
+        const list = createElement("ul");
+        for (const item of items) {
+            list.append(createElement("li", "", label(item)));
+        }
+        section.append(list);
+    }
+    container.append(section);
+}
+
+function lineItemLabel(code) {
+    const option = [...lineItemSelect.options].find((item) => item.value === code);
+    return option?.textContent ?? code;
+}
+
+function showAnalysisStatus(message, kind = "") {
+    analysisStatus.textContent = message;
+    analysisStatus.className = "upload-status";
+    if (kind) {
+        analysisStatus.classList.add(`is-${kind}`);
+    }
+}
+
+function clearAnalysisStatus() {
+    analysisStatus.textContent = "";
+    analysisStatus.className = "upload-status";
+}
 function renderSummary(documentInfo, pageCount, tableCount) {
     summary.replaceChildren();
     const values = [
@@ -260,9 +654,23 @@ function renderTables(tables) {
 
         const scroll = createElement("div", "table-scroll");
         const tableElement = createElement("table", "extracted-table");
+        const columns = table.rows.reduce(
+            (maximum, row) => Math.max(maximum, row.length),
+            0,
+        );
+        const tableHead = createElement("thead");
+        const headerRow = createElement("tr");
+        headerRow.append(createElement("th", "", "Row / column"));
+        for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+            headerRow.append(
+                createElement("th", "", `Column ${columnIndex}`),
+            );
+        }
+        tableHead.append(headerRow);
         const body = createElement("tbody");
-        for (const row of table.rows) {
+        for (const [rowIndex, row] of table.rows.entries()) {
             const tableRow = createElement("tr");
+            tableRow.append(createElement("th", "", `Row ${rowIndex}`));
             for (const cell of row) {
                 const tableCell = createElement("td");
                 tableCell.textContent = cell;
@@ -270,7 +678,7 @@ function renderTables(tables) {
             }
             body.append(tableRow);
         }
-        tableElement.append(body);
+        tableElement.append(tableHead, body);
         scroll.append(tableElement);
         details.append(heading, scroll);
 
@@ -315,6 +723,9 @@ function statusLabel(status) {
         failed: "Extraction failed",
         processing: "Processing",
         empty: "Empty page",
+        calculated: "Calculated",
+        unavailable: "Unavailable",
+        blocked: "Blocked",
     };
     return labels[status] ?? status;
 }

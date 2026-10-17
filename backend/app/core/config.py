@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -20,6 +21,10 @@ class Settings(BaseSettings):
     document_ocr_timeout_seconds: int = Field(default=30, gt=0)
     document_ocr_dpi: int = Field(default=200, ge=72, le=600)
     document_low_text_char_threshold: int = Field(default=40, ge=0)
+    financial_reconciliation_tolerance_rupees: Decimal = Field(
+        default=Decimal("1"),
+        ge=0,
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

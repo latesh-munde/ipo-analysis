@@ -97,6 +97,11 @@ Keep the terminal running while using the site. On startup, the API is at
    Open **Tables** to review supported table rows and their source pages.
 7. Compare extracted content with the original PDF, particularly OCR results
    and financial figures. OCR is not guaranteed to be accurate.
+8. In **Financial analysis**, map relevant values to their exact extracted
+   table cells, explicitly set the period and reporting metadata, then calculate
+   metrics. Review findings and verify OCR/table values against the filing.
+   Analysis reports are shown in the web application and are not persisted or
+   exported.
 
 The default upload limit is 50 MiB and the page limit is 2,000 pages. The server
 validates the file and reports invalid, encrypted, oversized, or unreadable PDF
@@ -137,7 +142,9 @@ development server to expose private uploaded documents to an untrusted network.
 To select another local folder, set `DOCUMENT_STORAGE_DIR` in `backend/.env`.
 Other supported limits and OCR settings are listed in
 [`backend/.env.example`](./backend/.env.example) and described in the
-[document-ingestion guide](./docs/features/document-ingestion.md).
+[document-ingestion guide](./docs/features/document-ingestion.md). The
+financial-analysis guide documents the INR reconciliation tolerance and the
+source-cell mapping workflow.
 
 ### Create the development environment (if needed)
 
@@ -182,6 +189,8 @@ Only report checks as passing if they were actually run and passed.
 - `docs/sessions/`: development progress and investigation notes
 - `docs/features/`: implemented feature behavior
 - `docs/features/document-ingestion.md`: PDF upload and extraction behavior
+- `docs/features/financial-analysis.md`: source-bound financial calculations,
+  formulas, API, and known Phase 3 integration gap
 - `docs/testing/`: testing strategy
 - `docs/ai/`: AI, retrieval, evidence, and evaluation design
 
@@ -189,6 +198,8 @@ Only report checks as passing if they were actually run and passed.
 
 - Distinguish reported facts, deterministic calculations, and AI-generated interpretation.
 - Preserve document/page/period/currency/unit provenance where available.
+- Financial-analysis inputs must be mapped to saved source cells; the backend
+  reads the value from that cell rather than trusting a client-supplied amount.
 - Never fabricate financial values, source pages, or citations.
 - Keep financial calculations deterministic and independently testable.
 - State uncertainty, missing information, and limitations clearly.

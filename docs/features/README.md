@@ -1,6 +1,13 @@
 # Feature Documentation
 
-Feature docs describe current implemented behavior, usage, contracts, configuration, and troubleshooting.
+Feature docs describe current implemented behavior, usage, contracts,
+configuration, and troubleshooting.
+
+Current feature guides:
+
+- [Application foundation](./application-foundation.md)
+- [Document ingestion](./document-ingestion.md)
+- [Financial analysis](./financial-analysis.md) (in progress)
 
 ## Naming
 

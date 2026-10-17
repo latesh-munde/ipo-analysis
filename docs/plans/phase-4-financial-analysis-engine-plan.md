@@ -1,7 +1,7 @@
 # Phase 4 — Financial Analysis Engine: Implementation Plan
 **Project:** IPO Analysis System
 **Phase:** 4
-**Status:** Planned; implementation delegated to a coding agent
+**Status:** In progress; deterministic engine and source-cell UI/API are implemented, but Phase 3 does not yet emit structured financial facts
 **Objective:** Convert validated financial facts from Phase 3 into deterministic metrics and a traceable financial report.
 ## 1. Purpose
 Phase 4 consumes structured facts extracted from IPO documents and calculates financial performance, financial position, cash-flow indicators, and ratios. The output must distinguish reported facts, derived metrics, unavailable values, validation findings, and calculation failures.
@@ -192,32 +192,67 @@ Use the repository's existing test framework. Prefer isolated unit tests for nor
 - Include a restatement or conflicting-source case. • Use synthetic or appropriately anonymized data. • Document units, periods, and expected calculations in each fixture.
 ## 19. Implementation stages
 ### Stage 0 — Baseline and design
-- Inspect repository instructions and architecture. • Run existing tests and record baseline. • Confirm Phase 3 fact and evidence contracts.
-- Record unresolved assumptions. • Exit: interfaces map to actual repository structures.
+- Complete. The baseline is 29 passing tests. Ruff lint passed; baseline
+  `ruff format --check .` reported the pre-existing `app/core/logging.py`
+  formatting difference. Phase 3 source data is raw `ExtractedTable` rows with
+  document/page/table provenance, not structured financial facts. See
+  `docs/features/financial-analysis.md`.
 ### Stage 1 — Domain contracts
-- Define/adapt fact, period, evidence, metric result, and finding models. • Define stable statuses and reason codes. • Add schema tests.
-- Document canonical line-item identifiers. • Exit: contracts are explicit and independently testable.
+- Implemented for the analysis request/report: line-item, period, evidence,
+  metric, status, finding, and check schemas with explicit reason codes.
 ### Stage 2 — Normalization and validation
-- Implement alias registry and unit/period normalization. • Implement structural and semantic validation. • Implement cross-statement checks with tolerances.
-- Preserve raw values and provenance. • Exit: fixtures produce deterministic facts and findings.
+- Implemented for explicit source-cell mapping: Decimal INR scale normalization,
+  period/basis/audit/restatement separation, structural/source-cell validation,
+  duplicate conflict checks, sign policies, and configurable reconciliation
+  tolerance. Automatic line-label alias mapping remains blocked on structured
+  Phase 3 facts and is not guessed.
 ### Stage 3 — Calculation core
-- Implement formula helpers and metric registry. • Implement growth and profitability first. • Implement debt, liquidity, and cash-flow metrics next.
-- Add missing-data and denominator policies. • Exit: formulas pass hand-checked tests.
+- Implemented and unit-tested for the supported metric catalogue in the
+  financial-analysis feature guide. Formula version is `1.0.0`.
 ### Stage 4 — Report assembly
-- Assemble metrics, periods, findings, and evidence. • Include formula metadata and input references. • Standardize unavailable statuses.
-- Exit: report schema is stable and traceable.
+- Implemented on demand with formula/input/evidence metadata, findings,
+  reconciliation checks, unavailable states, and limitations.
 ### Stage 5 — API and UI
-- Add/adapt application service and endpoints. • Integrate frontend without duplicated calculations. • Add API/presentation tests or manual checks.
-- Exit: users can run analysis and inspect evidence.
+- Implemented as `POST /api/v1/documents/{document_id}/financial-analysis` and a
+  source-cell mapping/report view in the existing page. The browser does not
+  calculate metrics.
 ### Stage 6 — Regression and handoff
-- Run relevant tests and quality checks. • Update architecture, API, metric, and testing documentation. • Verify Phase 2/3 behavior.
-- Produce implementation report and known limitations. • Exit: acceptance criteria are demonstrably met.
+- The full regression suite, lint, dependency, frontend syntax, and changed-file
+  formatting checks have been recorded. Repository-wide format checking still
+  reports only the pre-existing `app/core/logging.py` formatting difference.
+  Phase 3's missing structured-fact producer and cross-document identity remain
+  acceptance blockers.
 ## 20. Acceptance criteria
-- [ ] Repository instructions and baseline test results were reviewed. • [ ] Phase 3 input contract is explicit and documented. • [ ] Raw facts and provenance remain intact.
-- [ ] Decimal-safe arithmetic is used for financial calculations. • [ ] Period, currency, unit, and sign compatibility are validated. • [ ] Supported growth, margin, debt, liquidity, and cash-flow metrics are implemented.
-- [ ] Missing inputs and zero denominators return explicit statuses. • [ ] Cross-statement checks distinguish pass, warning, failure, and not-checkable. • [ ] Each derived metric identifies formula and input facts.
-- [ ] Reported facts link to available document/page/table evidence. • [ ] API and UI use the same backend-calculated values. • [ ] Unit and integration tests cover normal, boundary, and missing-data cases.
-- [ ] Existing tests pass or regressions are resolved and explained. • [ ] Documentation explains formulas, assumptions, limitations, and test commands. • [ ] No unsupported investment recommendation or forecast is included.
+- [x] Repository instructions and baseline test results were reviewed.
+- [x] The actual Phase 3 raw-table/evidence contract and its missing financial
+  fact fields are explicitly documented.
+- [x] Extracted source text is read-only; raw values and source locators are
+  preserved in each on-demand fact and report.
+- [x] Decimal arithmetic and explicit INR scale normalization are used.
+- [x] Period, currency, scale, statement basis, audit status, restatement
+  status, and supported sign conventions are validated or scoped separately.
+- [x] Supported growth, profitability, debt, liquidity, cash-flow, ROA, ROE,
+  and reported-EPS metrics are implemented.
+- [x] Missing inputs, zero denominators, conflicts, and blocked calculations
+  return explicit statuses/reason codes.
+- [x] Cross-statement checks return pass, warning, failure, or not-checkable.
+- [x] Each derived metric includes its formula version, input fact IDs, and
+  evidence references.
+- [x] Reported facts reference their source document, page, table, row, value
+  cell, and period-header cell.
+- [x] The UI renders the same backend-calculated values without client-side
+  financial formulas.
+- [x] Synthetic unit/API tests cover calculations, source resolution, evidence,
+  normal/boundary/missing/conflicting input, and reconciliation behavior.
+- [ ] Phase 3 does not yet emit or persist canonical financial facts; the UI
+  currently requires user-reviewed fact mapping. Automatic ingestion into the
+  engine remains blocked on an upstream Phase 3 schema/repository.
+- [ ] There is no company/IPO-to-document association, so safe cross-document
+  DRHP/RHP/restatement conflict analysis is unavailable.
+- [x] Full regression and repository-wide quality-check results are recorded;
+  the pre-existing repository-wide formatting exception is documented below.
+- [x] Documentation explains formulas, assumptions, limitations, and commands;
+  the feature makes no investment recommendation or forecast.
 ## 21. Documentation deliverables
 - Phase 4 plan under `docs/plans/`. • Metric catalogue with formula, required inputs, units, caveats, and version. • Phase 3 integration/data contract.
 - Validation rules and severity definitions. • API examples and report schema if APIs change. • Test instructions and fixture descriptions.
@@ -227,6 +262,30 @@ Use the repository's existing test framework. Prefer isolated unit tests for nor
 - **Metrics:** formulas implemented and omitted. • **Validation:** checks and limitations. • **Evidence:** how a user traces metrics to source facts.
 - **Tests:** exact commands and outcomes. • **Compatibility:** regression status for existing behavior. • **Known limitations:** missing source fields and unresolved assumptions.
 - **Follow-up:** only genuinely out-of-scope work.
+
+### Implementation handoff (2026-10-17)
+
+- **Implemented:** on-demand source-bound facts, Decimal normalization,
+  validation, the documented financial metric definitions and formula outcomes, reconciliation
+  checks, API, UI, and synthetic unit/API tests.
+- **Upstream data contract:** `ExtractedTable` supplies raw rows plus
+  document/page/table references only. The analysis API validates cell
+  coordinates and reads values from those cells; it does not accept client
+  numeric amounts.
+- **Blocking follow-up:** Phase 3 needs a validated, evidence-linked canonical
+  financial-fact schema and repository, and the application needs a trusted
+  company/document association before the engine can automatically analyze
+  issuer-level facts or compare prospectus revisions.
+- **Other limitations:** INR-only scale handling, explicit manual line/period
+  mapping, no report persistence/export, and reported-only EPS. See the feature
+  guide for exact metric policies and known omissions.
+- **Verification:** `python -m pytest` passed (51 tests); `ruff check .`,
+  `pip check`, changed-file `ruff format --check`, `node --check
+  frontend\js\app.js`, and `git diff --check` passed. The served UI returned
+  HTTP 200 and the browser rendered its connected-backend status without a
+  page error. Repository-wide
+  `ruff format --check .` continues to fail only on the baseline formatting
+  difference in `app/core/logging.py`.
 ## 23. Design principles
 1. Correctness before breadth.
 2. Evidence before interpretation.
